@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - goos: linux
+            goarch: arm
+            goarm: 7
+            suffix: linux-arm
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: linux
+            goarch: mips
+            gomips: softfloat
+            suffix: linux-mips
+          - goos: linux
+            goarch: mipsle
+            gomips: softfloat
+            suffix: linux-mipsle
+          - goos: windows
+            goarch: amd64
+            suffix: windows-amd64.exe
+          - goos: windows
+            goarch: arm64
+            suffix: windows-arm64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install UPX
+        run: sudo apt-get update && sudo apt-get install -y upx
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          GOMIPS: ${{ matrix.gomips }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p bin
+          BIN="miru-${{ matrix.suffix }}"
+          go build \
+            -tags nethttpomithttp2 \
+            -ldflags="-s -w -X main.AppVersion=${{ github.ref_name }}" \
+            -trimpath \
+            -o "bin/${BIN}" \
+            ./cmd/miru
+
+          case "${BIN}" in
+            *.exe) UPX_BIN="${BIN%.exe}-upx.exe" ;;
+            *)     UPX_BIN="${BIN}-upx" ;;
+          esac
+          cp "bin/${BIN}" "bin/${UPX_BIN}"
+          upx --best --lzma "bin/${UPX_BIN}" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: miru-${{ matrix.suffix }}
+          path: bin/*
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
+          body: |
+            ### Supported architectures
+            | File (standard) | File (UPX-compressed) | Target / Architecture |
+            |-----------------|-----------------------|-----------------------|
+            | `miru-linux-arm64` | `miru-linux-arm64-upx` | MediaTek Filogic, RPi 4/5, Rockchip (ARM64) |
+            | `miru-linux-arm` | `miru-linux-arm-upx` | Cortex-A7 / Cortex-A9 routers (ARMv7) |
+            | `miru-linux-amd64` | `miru-linux-amd64-upx` | x86-64 routers, Mini PCs, servers |
+            | `miru-linux-mips` | `miru-linux-mips-upx` | Atheros AR7xxx / AR9xxx (big-endian) |
+            | `miru-linux-mipsle` | `miru-linux-mipsle-upx` | MediaTek MT7620 / MT7621 / MT7628 (little-endian) |
+            | `miru-windows-amd64.exe` | `miru-windows-amd64-upx.exe` | Windows x86_64 |
+            | `miru-windows-arm64.exe` | `miru-windows-arm64-upx.exe` | Windows ARM64 |

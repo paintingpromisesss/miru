@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Miru — Mihomo Rule Manager</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        brand: {
+          50: '#eef2ff',
+          100: '#e0e7ff',
+          500: '#6366f1',
+          600: '#4f46e5',
+          700: '#4338ca',
+        }
+      }
+    }
+  }
+}
+</script>
+<style>
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+  .toast-anim { animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+  @keyframes toastIn {
+    from { transform: translateY(-12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased flex flex-col font-sans selection:bg-brand-500 selection:text-white">
+
+<header class="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur sticky top-0 z-30">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-400 flex items-center justify-center font-black text-white text-base shadow-lg shadow-indigo-500/20">
+        M
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-bold text-base tracking-tight text-white">Miru</h1>
+          <span class="text-[11px] font-mono bg-slate-800 text-indigo-300 px-2 py-0.5 rounded border border-slate-700">OpenWrt</span>
+        </div>
+        <p class="text-xs text-slate-400">Mihomo MRS & Rules Manager</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button id="btn-custom-rule" class="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition flex items-center gap-1.5 shadow-sm">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        Custom MRS
+      </button>
+
+      <button id="btn-reload-mihomo" class="px-3 py-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition flex items-center gap-1.5 shadow-sm shadow-indigo-600/30">
+        <svg id="reload-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Reload Mihomo
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="max-w-6xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+  <nav class="flex items-center justify-between border-b border-slate-800 pb-3">
+    <div class="flex gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800" id="tabs">
+      <button data-tab="catalog" class="tab-btn px-4 py-1.5 text-xs font-semibold rounded-lg transition bg-brand-600 text-white shadow">Rules Catalog</button>
+      <button data-tab="active" class="tab-btn px-4 py-1.5 text-xs font-semibold rounded-lg transition text-slate-400 hover:text-white">Active Rule-Sets</button>
+      <button data-tab="local" class="tab-btn px-4 py-1.5 text-xs font-semibold rounded-lg transition text-slate-400 hover:text-white">Full Config & Files</button>
+    </div>
+
+    <div id="stats-badge" class="text-xs text-slate-400 hidden sm:flex items-center gap-3">
+      <span id="stat-active" class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Active: <b>0</b></span>
+      <span id="stat-providers" class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Providers: <b>0</b></span>
+    </div>
+  </nav>
+
+  <main id="tab-content" class="min-h-[400px]"></main>
+</div>
+
+<footer class="border-t border-slate-900 py-4 text-center text-xs text-slate-600">
+  Miru — Lightweight Mihomo Controller for Embedded Linux & OpenWrt
+</footer>
+
+<div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+<div id="modal-container" class="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center p-4"></div>
+
+<script>
+const API = {
+  getLocal: () => fetch('/api/local').then(r => r.json()),
+  getCatalog: (refresh = false) => fetch('/api/catalog' + (refresh ? '?action=refresh' : '')).then(r => r.json()),
+  addRule: (data) => fetch('/api/rules', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }),
+  deleteRule: (name, deleteFile = true) => fetch(`/api/rules?name=${encodeURIComponent(name)}&delete_file=${deleteFile}`, {
+    method: 'DELETE'
+  }),
+  reloadMihomo: () => fetch('/api/reload', { method: 'POST' }).then(r => r.json())
+};
+
+let state = {
+  currentTab: 'catalog',
+  local: null,
+  catalog: [],
+  catalogLoading: false,
+  catalogLoadedAt: '',
+  catalogWarning: '',
+  searchQuery: '',
+  categoryFilter: 'all',
+};
+
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  const colors = {
+    success: 'bg-emerald-950/90 border-emerald-800 text-emerald-200',
+    error: 'bg-rose-950/90 border-rose-800 text-rose-200',
+    info: 'bg-slate-900/90 border-slate-700 text-slate-200',
+    warning: 'bg-amber-950/90 border-amber-800 text-amber-200',
+  }[type] || 'bg-slate-900 border-slate-700 text-slate-200';
+
+  toast.className = `toast-anim border rounded-xl p-3 text-xs shadow-xl flex items-start gap-2.5 pointer-events-auto backdrop-blur ${colors}`;
+  toast.innerHTML = `
+    <div class="flex-1">${escapeHtml(message)}</div>
+    <button class="text-slate-400 hover:text-white text-base leading-none">&times;</button>
+  `;
+  toast.querySelector('button').onclick = () => toast.remove();
+  container.appendChild(toast);
+  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 4000);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function setTab(tab) {
+  state.currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const active = btn.dataset.tab === tab;
+    btn.className = `tab-btn px-4 py-1.5 text-xs font-semibold rounded-lg transition ${
+      active ? 'bg-brand-600 text-white shadow' : 'text-slate-400 hover:text-white'
+    }`;
+  });
+  render();
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => setTab(btn.dataset.tab));
+});
+
+async function fetchLocal() {
+  try {
+    const data = await API.getLocal();
+    state.local = data;
+    updateStats();
+  } catch (err) {
+    showToast('Failed to load local config: ' + err.message, 'error');
+  }
+}
+
+async function fetchCatalog(refresh = false) {
+  state.catalogLoading = true;
+  if (state.currentTab === 'catalog') render();
+  try {
+    const res = await API.getCatalog(refresh);
+    state.catalog = res.items || [];
+    state.catalogLoadedAt = res.loaded_at || '';
+    state.catalogWarning = res.warning || '';
+    if (state.catalogWarning) {
+      showToast(state.catalogWarning, 'warning');
+    }
+  } catch (err) {
+    showToast('Catalog load error: ' + err.message, 'error');
+  } finally {
+    state.catalogLoading = false;
+    render();
+  }
+}
+
+function updateStats() {
+  if (!state.local) return;
+  const activeCount = (state.local.rules || []).filter(r => r.trim().startsWith('RULE-SET,')).length;
+  const provCount = (state.local.rule_providers || []).length;
+  document.getElementById('stat-active').innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Active: <b>${activeCount}</b>`;
+  document.getElementById('stat-providers').innerHTML = `<span class="w-2 h-2 rounded-full bg-indigo-500"></span> Providers: <b>${provCount}</b>`;
+}
+
+function render() {
+  const content = document.getElementById('tab-content');
+  if (state.currentTab === 'catalog') {
+    content.innerHTML = renderCatalogView();
+    bindCatalogEvents();
+  } else if (state.currentTab === 'active') {
+    content.innerHTML = renderActiveRulesView();
+    bindActiveEvents();
+  } else if (state.currentTab === 'local') {
+    content.innerHTML = renderLocalView();
+  }
+}
+
+function renderCatalogView() {
+  const q = state.searchQuery.toLowerCase();
+  const filter = state.categoryFilter;
+
+  const filtered = state.catalog.filter(item => {
+    if (filter === 'geosite' && item.category !== 'geosite') return false;
+    if (filter === 'geoip' && item.category !== 'geoip') return false;
+    if (filter === 'applied' && !item.applied) return false;
+    if (q && !item.name.toLowerCase().includes(q) && !item.path.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  return `
+    <div class="space-y-4">
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+        <div class="relative flex-1">
+          <svg class="w-4 h-4 absolute left-3 top-2.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input id="cat-search" type="text" value="${escapeHtml(state.searchQuery)}" placeholder="Search rules (e.g. youtube, telegram, cn, google)..." class="w-full pl-9 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500 transition">
+        </div>
+
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button data-cat-filter="all" class="cat-filter-btn px-2.5 py-1 text-xs font-medium rounded-lg border transition ${filter === 'all' ? 'bg-slate-800 border-slate-600 text-white' : 'border-slate-800 text-slate-400 hover:text-white'}">All</button>
+          <button data-cat-filter="geosite" class="cat-filter-btn px-2.5 py-1 text-xs font-medium rounded-lg border transition ${filter === 'geosite' ? 'bg-slate-800 border-slate-600 text-white' : 'border-slate-800 text-slate-400 hover:text-white'}">Geosite (Domains)</button>
+          <button data-cat-filter="geoip" class="cat-filter-btn px-2.5 py-1 text-xs font-medium rounded-lg border transition ${filter === 'geoip' ? 'bg-slate-800 border-slate-600 text-white' : 'border-slate-800 text-slate-400 hover:text-white'}">GeoIP (CIDR)</button>
+          <button data-cat-filter="applied" class="cat-filter-btn px-2.5 py-1 text-xs font-medium rounded-lg border transition ${filter === 'applied' ? 'bg-slate-800 border-slate-600 text-white' : 'border-slate-800 text-slate-400 hover:text-white'}">Active Only</button>
+
+          <button id="cat-refresh-btn" title="Refresh from GitHub Trees API" class="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800 transition ml-1">
+            <svg class="w-3.5 h-3.5 ${state.catalogLoading ? 'spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
+      </div>
+
+      ${state.catalogLoading ? `
+        <div class="py-16 text-center space-y-3">
+          <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full spin mx-auto"></div>
+          <p class="text-xs text-slate-400 font-mono">Fetching ruleset trees from GitHub...</p>
+        </div>
+      ` : filtered.length === 0 ? `
+        <div class="p-12 text-center rounded-xl bg-slate-900/40 border border-slate-800 text-slate-500 text-xs">
+          No ruleset matched your criteria.
+        </div>
+      ` : `
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          ${filtered.map(item => `
+            <div class="p-3 rounded-xl border transition flex flex-col justify-between ${
+              item.applied ? 'bg-indigo-950/20 border-indigo-500/40' : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
+            }">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-1">
+                  <span class="font-mono text-xs font-semibold ${item.applied ? 'text-indigo-300' : 'text-slate-100'} truncate" title="${escapeHtml(item.name)}">
+                    ${escapeHtml(item.name)}
+                  </span>
+                  <div class="flex items-center gap-1.5 flex-shrink-0">
+                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                      item.category === 'geosite' ? 'bg-sky-950 text-sky-400 border border-sky-800/60' : 'bg-amber-950 text-amber-400 border border-amber-800/60'
+                    }">${escapeHtml(item.category)}</span>
+                    ${item.applied ? '<span class="text-[10px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.5 rounded">ACTIVE</span>' : ''}
+                  </div>
+                </div>
+                <p class="text-[11px] font-mono text-slate-500 truncate mb-1" title="${escapeHtml(item.path)}">${escapeHtml(item.path)}</p>
+                <div class="text-[10px] text-slate-400 flex items-center gap-2">
+                  <span>Size: ${formatBytes(item.size)}</span>
+                  <span>Behavior: <b class="text-slate-300">${escapeHtml(item.behavior)}</b></span>
+                </div>
+              </div>
+
+              <div class="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between">
+                <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener" class="text-[10px] text-slate-500 hover:text-indigo-400 flex items-center gap-1">
+                  raw link
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                </a>
+
+                ${item.applied ? `
+                  <button data-remove="${escapeHtml(item.name)}" class="px-2.5 py-1 text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-950/60 rounded-lg border border-rose-900 transition">
+                    Remove
+                  </button>
+                ` : `
+                  <button data-add-item='${JSON.stringify(item)}' class="px-3 py-1 text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition shadow-sm">
+                    + Add Rule
+                  </button>
+                `}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function bindCatalogEvents() {
+  const searchInput = document.getElementById('cat-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      state.searchQuery = e.target.value;
+      render();
+      const el = document.getElementById('cat-search');
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    });
+  }
+
+  document.querySelectorAll('[data-cat-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.categoryFilter = btn.dataset.catFilter;
+      render();
+    });
+  });
+
+  const refBtn = document.getElementById('cat-refresh-btn');
+  if (refBtn) {
+    refBtn.addEventListener('click', () => fetchCatalog(true));
+  }
+
+  document.querySelectorAll('[data-add-item]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openAddRuleModal(JSON.parse(btn.dataset.addItem));
+    });
+  });
+
+  document.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      confirmDeleteRule(btn.dataset.remove);
+    });
+  });
+}
+
+function renderActiveRulesView() {
+  if (!state.local) return '<div class="text-center py-12 text-slate-500">Loading local state...</div>';
+
+  const rules = (state.local.rules || []).filter(r => r.trim().startsWith('RULE-SET,'));
+  const providersMap = {};
+  (state.local.rule_providers || []).forEach(p => { providersMap[p.name] = p; });
+
+  const diskMap = {};
+  (state.local.disk_files || []).forEach(f => { diskMap[f.name.toLowerCase()] = f; });
+
+  return `
+    <div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active RULE-SET Directives</h2>
+        <span class="text-xs text-slate-500">${rules.length} rule-set(s) registered</span>
+      </div>
+
+      ${rules.length === 0 ? `
+        <div class="p-12 text-center rounded-xl bg-slate-900/40 border border-slate-800 text-slate-500 text-xs">
+          No RULE-SET rules currently defined in config.yaml. Select rules from the Catalog tab!
+        </div>
+      ` : `
+        <div class="space-y-2">
+          ${rules.map(rule => {
+            const parts = rule.split(',').map(s => s.trim());
+            const name = parts[1] || '';
+            const targetGroup = parts[2] || '';
+            const prov = providersMap[name];
+            const fileName = (name + '.mrs').toLowerCase();
+            const diskFile = diskMap[fileName];
+
+            return `
+              <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-mono text-sm font-bold text-indigo-400">${escapeHtml(name)}</span>
+                    <span class="text-slate-600 text-xs">→</span>
+                    <span class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-200 text-xs font-medium border border-slate-700 font-mono">${escapeHtml(targetGroup)}</span>
+                    ${diskFile ? `
+                      <span class="text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 px-1.5 py-0.5 rounded font-mono">
+                        Downloaded (${formatBytes(diskFile.size)})
+                      </span>
+                    ` : `
+                      <span class="text-[10px] bg-amber-950/60 text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono">
+                        Pending Mihomo Download
+                      </span>
+                    `}
+                  </div>
+
+                  ${prov ? `
+                    <div class="text-[11px] text-slate-400 flex items-center gap-3 flex-wrap">
+                      <span>Behavior: <b class="text-slate-300 font-mono">${escapeHtml(prov.behavior)}</b></span>
+                      <span>Format: <b class="text-slate-300 font-mono">${escapeHtml(prov.format)}</b></span>
+                      <span class="truncate max-w-md text-slate-500 font-mono">${escapeHtml(prov.url)}</span>
+                    </div>
+                  ` : ''}
+                </div>
+
+                <div class="flex items-center gap-2 self-end sm:self-center">
+                  <button data-delete-rule="${escapeHtml(name)}" class="px-3 py-1 text-xs font-medium text-rose-400 hover:text-white hover:bg-rose-600 rounded-lg border border-rose-900 transition">
+                    Remove
+                  </button>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function bindActiveEvents() {
+  document.querySelectorAll('[data-delete-rule]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      confirmDeleteRule(btn.dataset.deleteRule);
+    });
+  });
+}
+
+function renderLocalView() {
+  if (!state.local) return '<div class="text-center py-12 text-slate-500">Loading...</div>';
+
+  const s = state.local;
+
+  return `
+    <div class="space-y-6">
+      <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-wrap gap-4 text-xs">
+        <div><span class="text-slate-500">Config:</span> <span class="font-mono text-slate-200">${escapeHtml(s.config_path)}</span></div>
+        <div><span class="text-slate-500">Rules Dir:</span> <span class="font-mono text-slate-200">${escapeHtml(s.rules_dir)}</span></div>
+      </div>
+
+      <section>
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5">Available Proxy Groups</h3>
+        <div class="flex flex-wrap gap-1.5">
+          ${(s.proxy_groups || []).map(g => `
+            <span class="px-2.5 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-slate-300">${escapeHtml(g)}</span>
+          `).join('')}
+        </div>
+      </section>
+
+      <section>
+        <div class="flex items-center justify-between mb-2.5">
+          <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Files in Rules Directory</h3>
+          <span class="text-xs text-slate-500">${(s.disk_files || []).length} file(s) on disk</span>
+        </div>
+        ${(s.disk_files || []).length === 0 ? `
+          <div class="p-4 rounded-xl bg-slate-900/30 border border-slate-800/80 text-xs text-slate-500 italic">
+            No .mrs files found in ${escapeHtml(s.rules_dir)} yet. Mihomo downloads them on first start or refresh.
+          </div>
+        ` : `
+          <div class="border border-slate-800 rounded-xl bg-slate-900/60 overflow-hidden text-xs">
+            <div class="max-h-56 overflow-y-auto divide-y divide-slate-800/60 font-mono">
+              ${s.disk_files.map(f => `
+                <div class="px-3 py-2 flex items-center justify-between">
+                  <span class="text-slate-200">${escapeHtml(f.name)}</span>
+                  <div class="flex items-center gap-3 text-slate-400">
+                    <span>${formatBytes(f.size)}</span>
+                    <span class="text-slate-500">${escapeHtml(f.mod_time)}</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `}
+      </section>
+
+      <section>
+        <div class="flex items-center justify-between mb-2.5">
+          <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">All Config Rules (in execution order)</h3>
+          <span class="text-xs text-slate-500">${(s.rules || []).length} lines</span>
+        </div>
+        <div class="border border-slate-800 rounded-xl bg-slate-900/60 overflow-hidden">
+          <div class="max-h-64 overflow-y-auto font-mono text-xs divide-y divide-slate-800/50">
+            ${(s.rules || []).map((r, i) => `
+              <div class="px-3 py-1.5 flex items-center gap-3 ${r.includes('MATCH') ? 'bg-amber-950/20 text-amber-300 font-semibold' : 'text-slate-300'}">
+                <span class="text-slate-600 select-none w-6 text-right">${i+1}</span>
+                <span>${escapeHtml(r)}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function openAddRuleModal(preset = null) {
+  if (!state.local || (state.local.proxy_groups || []).length === 0) {
+    showToast('No proxy groups detected in Mihomo config.yaml', 'error');
+    return;
+  }
+
+  const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+  const defaultGroup = groups.includes('UNBLOCK') ? 'UNBLOCK' :
+                       groups.includes('PROXY') ? 'PROXY' :
+                       groups.includes('STABLE') ? 'STABLE' : groups[0];
+
+  const modal = document.getElementById('modal-container');
+  const isCustom = !preset;
+  const initialName = preset ? (preset.category === 'geoip' ? 'geoip-' + preset.name : preset.name) : '';
+  const initialUrl = preset ? preset.url : '';
+  const initialBehavior = preset ? preset.behavior : 'domain';
+
+  modal.innerHTML = `
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-lg w-full space-y-4 shadow-2xl relative" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="font-bold text-sm text-white">${isCustom ? 'Add Custom Ruleset' : 'Add Ruleset to Mihomo'}</h3>
+        <button id="modal-close" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-slate-400 mb-1 font-medium">Provider Name (Rule-Set identifier)</label>
+          <input id="modal-name" type="text" value="${escapeHtml(initialName)}" placeholder="e.g. youtube or my-domains" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-mono focus:border-brand-500 focus:outline-none">
+          <p class="text-[11px] text-slate-500 mt-0.5">Used in rule-providers and RULE-SET,&lt;name&gt;,&lt;group&gt;</p>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 mb-1 font-medium">Download URL (.mrs file)</label>
+          <input id="modal-url" type="text" value="${escapeHtml(initialUrl)}" placeholder="https://..." class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-mono focus:border-brand-500 focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 mb-1 font-medium">Behavior</label>
+            <select id="modal-behavior" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:border-brand-500 focus:outline-none">
+              <option value="domain" ${initialBehavior === 'domain' ? 'selected' : ''}>domain (geosite)</option>
+              <option value="ipcidr" ${initialBehavior === 'ipcidr' ? 'selected' : ''}>ipcidr (geoip)</option>
+              <option value="classical" ${initialBehavior === 'classical' ? 'selected' : ''}>classical</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-slate-400 mb-1 font-medium">Format</label>
+            <select id="modal-format" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 focus:border-brand-500 focus:outline-none">
+              <option value="mrs" selected>mrs (Mihomo rule-set binary)</option>
+              <option value="yaml">yaml</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 mb-1 font-medium">Target Proxy Group</label>
+          <select id="modal-group" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-medium focus:border-brand-500 focus:outline-none">
+            ${groups.map(g => `<option value="${escapeHtml(g)}" ${g === defaultGroup ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
+          </select>
+          <p class="text-[11px] text-slate-500 mt-0.5">Traffic matching this rule will be routed via this proxy group</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+        <button id="modal-cancel-btn" class="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition">Cancel</button>
+        <button id="modal-submit-btn" class="px-4 py-2 rounded-lg text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white transition flex items-center gap-1.5 shadow-sm">
+          <span>Apply & Reload</span>
+        </button>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+
+  document.getElementById('modal-close').onclick = closeModal;
+  document.getElementById('modal-cancel-btn').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  document.getElementById('modal-submit-btn').onclick = async () => {
+    const name = document.getElementById('modal-name').value.trim();
+    const url = document.getElementById('modal-url').value.trim();
+    const behavior = document.getElementById('modal-behavior').value;
+    const format = document.getElementById('modal-format').value;
+    const proxyGroup = document.getElementById('modal-group').value;
+
+    if (!name || !url || !proxyGroup) {
+      showToast('Please fill in Name, URL, and Proxy Group', 'error');
+      return;
+    }
+
+    const submitBtn = document.getElementById('modal-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full spin"></span> Saving...';
+
+    try {
+      const res = await API.addRule({
+        name: name,
+        url: url,
+        behavior: behavior,
+        format: format,
+        proxy_group: proxyGroup
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Request failed');
+      }
+
+      showToast(data.message || `Rule ${name} registered!`, 'success');
+      closeModal();
+      await fetchLocal();
+      await fetchCatalog(false);
+    } catch (err) {
+      showToast(err.message, 'error');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'Apply & Reload';
+    }
+  };
+
+  document.getElementById('modal-name').focus();
+}
+
+function confirmDeleteRule(name) {
+  const modal = document.getElementById('modal-container');
+  modal.innerHTML = `
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-sm w-full space-y-4 shadow-2xl relative" onclick="event.stopPropagation()">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-rose-950 text-rose-400 border border-rose-800 flex items-center justify-center flex-shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </div>
+        <div>
+          <h3 class="font-bold text-sm text-white">Remove Ruleset</h3>
+          <p class="text-xs text-slate-400 font-mono">${escapeHtml(name)}</p>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-300">
+        This will delete the <code>RULE-SET</code> entry and unregister the rule-provider in <code>config.yaml</code>.
+      </p>
+
+      <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+        <input id="modal-del-file" type="checkbox" checked class="rounded bg-slate-900 border-slate-700 text-brand-600 focus:ring-0">
+        <span>Also delete downloaded <code>.mrs</code> file from disk</span>
+      </label>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+        <button id="modal-del-cancel" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 transition">Cancel</button>
+        <button id="modal-del-confirm" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition">Delete & Reload</button>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+
+  document.getElementById('modal-del-cancel').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  document.getElementById('modal-del-confirm').onclick = async () => {
+    const deleteFile = document.getElementById('modal-del-file').checked;
+    const btn = document.getElementById('modal-del-confirm');
+    btn.disabled = true;
+    btn.innerHTML = 'Removing...';
+
+    try {
+      const res = await API.deleteRule(name, deleteFile);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete');
+
+      showToast(data.message || `Removed ${name}`, 'success');
+      closeModal();
+      await fetchLocal();
+      await fetchCatalog(false);
+    } catch (err) {
+      showToast(err.message, 'error');
+      btn.disabled = false;
+      btn.innerHTML = 'Delete & Reload';
+    }
+  };
+}
+
+document.getElementById('btn-custom-rule').addEventListener('click', () => {
+  openAddRuleModal(null);
+});
+
+document.getElementById('btn-reload-mihomo').addEventListener('click', async () => {
+  const icon = document.getElementById('reload-icon');
+  icon.classList.add('spin');
+  try {
+    const data = await API.reloadMihomo();
+    if (data.status === 'ok') {
+      showToast('Mihomo hot-reloaded successfully!', 'success');
+    } else {
+      showToast(data.error || 'Hot-reload failed', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to reach Mihomo API: ' + err.message, 'error');
+  } finally {
+    icon.classList.remove('spin');
+  }
+});
+
+async function init() {
+  await fetchLocal();
+  await fetchCatalog(false);
+  setTab('catalog');
+}
+
+init();
+</script>
+</body>
+</html>

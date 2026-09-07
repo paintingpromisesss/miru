@@ -1,0 +1,17 @@
+# Binaries
+/miru
+/miru-*
+*.exe
+bin/
+dist/
+
+# Test artifacts
+*.tmp
+*.log
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
