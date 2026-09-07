@@ -126,7 +126,6 @@ configure_settings() {
         DEF_GITHUB_TOKEN="${MIRU_GITHUB_TOKEN:-$DEF_GITHUB_TOKEN}"
     fi
 
-    # Interactive prompt if running in interactive terminal
     if [ -t 0 ] || [ -e /dev/tty ]; then
         hdr "Configuration Setup"
 
@@ -176,7 +175,7 @@ install_service() {
             download "${GITHUB_RAW}/scripts/miru.init" "$INIT_DST"
         fi
         chmod +x "$INIT_DST"
-        "$INIT_DST" enable
+        "$INIT_DST" enable >/dev/null 2>&1 || true
         ok "Installed OpenWrt procd init script to $INIT_DST"
     elif [ "$INIT_SYSTEM" = "systemd" ]; then
         if [ -f "${SCRIPT_DIR}/miru.service" ]; then
@@ -185,7 +184,7 @@ install_service() {
             download "${GITHUB_RAW}/scripts/miru.service" "$SYSTEMD_SERVICE"
         fi
         systemctl daemon-reload
-        systemctl enable miru >/dev/null 2>&1
+        systemctl enable miru >/dev/null 2>&1 || true
         ok "Installed systemd unit to $SYSTEMD_SERVICE"
     else
         warn "Unknown init system. Binary installed to $BIN_DST, please start manually."
@@ -195,18 +194,18 @@ install_service() {
 start_service() {
     hdr "Starting Miru service"
     if [ "$INIT_SYSTEM" = "procd" ]; then
-        "$INIT_DST" restart
+        "$INIT_DST" restart >/dev/null 2>&1 || "$INIT_DST" start >/dev/null 2>&1 || true
     elif [ "$INIT_SYSTEM" = "systemd" ]; then
-        systemctl restart miru
+        systemctl restart miru >/dev/null 2>&1 || systemctl start miru >/dev/null 2>&1 || true
     fi
     sleep 2
 
     PORT="${MIRU_ACTIVE_PORT:-8080}"
     HEALTH_OK=0
     if command -v curl >/dev/null 2>&1; then
-        curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/api/local" 2>/dev/null && HEALTH_OK=1
+        curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/api/local" 2>/dev/null && HEALTH_OK=1 || true
     elif command -v wget >/dev/null 2>&1; then
-        wget -q -O /dev/null "http://127.0.0.1:${PORT}/api/local" 2>/dev/null && HEALTH_OK=1
+        wget -q -O /dev/null "http://127.0.0.1:${PORT}/api/local" 2>/dev/null && HEALTH_OK=1 || true
     fi
 
     if [ "$HEALTH_OK" = "1" ]; then
@@ -214,25 +213,31 @@ start_service() {
     else
         warn "Service started, checking health on http://127.0.0.1:${PORT}..."
     fi
+    return 0
 }
 
 detect_ip() {
     ROUTER_IP=""
     if command -v uci >/dev/null 2>&1; then
-        ROUTER_IP=$(uci -q get network.lan.ipaddr 2>/dev/null | head -n1)
+        ROUTER_IP="$(uci -q get network.lan.ipaddr 2>/dev/null || true)"
     fi
     if [ -z "$ROUTER_IP" ] && command -v ip >/dev/null 2>&1; then
-        ROUTER_IP=$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -n1)
-        [ -z "$ROUTER_IP" ] && ROUTER_IP=$(ip -4 addr show lan 2>/dev/null | awk '/inet /{print $2}' | head -n1)
-        [ -z "$ROUTER_IP" ] && ROUTER_IP=$(ip route get 1 2>/dev/null | awk '{print $7; exit}')
+        ROUTER_IP="$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -n1 || true)"
+        if [ -z "$ROUTER_IP" ]; then
+            ROUTER_IP="$(ip -4 addr show lan 2>/dev/null | awk '/inet /{print $2}' | head -n1 || true)"
+        fi
+        if [ -z "$ROUTER_IP" ]; then
+            ROUTER_IP="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || true)"
+        fi
     fi
     if [ -z "$ROUTER_IP" ] && command -v hostname >/dev/null 2>&1; then
-        ROUTER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        ROUTER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
     fi
     ROUTER_IP="${ROUTER_IP%% *}"
     ROUTER_IP="${ROUTER_IP%%/*}"
-    ROUTER_IP=$(echo "$ROUTER_IP" | tr -d ' \r\n')
+    ROUTER_IP="$(echo "$ROUTER_IP" | tr -d ' \r\n')"
     [ -z "$ROUTER_IP" ] && ROUTER_IP="127.0.0.1"
+    return 0
 }
 
 main() {
@@ -251,7 +256,6 @@ main() {
 
     info "Platform: $ARCH | Init: $INIT_SYSTEM | Version: $INSTALL_VERSION"
 
-    # Stop running service if updating
     if [ "$INIT_SYSTEM" = "procd" ] && [ -x "$INIT_DST" ]; then
         "$INIT_DST" stop >/dev/null 2>&1 || true
     elif [ "$INIT_SYSTEM" = "systemd" ] && systemctl is-active --quiet miru 2>/dev/null; then

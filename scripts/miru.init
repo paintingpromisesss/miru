@@ -40,7 +40,3 @@ start_service() {
     procd_set_param stderr 1
     procd_close_instance
 }
-
-stop_service() {
-    killall miru 2>/dev/null || true
-}
