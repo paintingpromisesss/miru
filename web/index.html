@@ -56,13 +56,17 @@ tailwind.config = {
 
 <header class="w-full border-b border-zinc-800 bg-zinc-950/90 backdrop-blur sticky top-0 z-30">
   <div class="w-full px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-3.5">
+    <div class="flex items-center gap-3">
       <div class="w-7 h-7 rounded-md bg-zinc-100 text-zinc-950 flex items-center justify-center font-bold text-sm tracking-tighter shadow-sm">
         M
       </div>
-      <div class="flex items-center gap-2.5">
-        <span class="font-semibold text-sm tracking-tight text-zinc-100">Miru</span>
-        <span class="text-[11px] font-mono bg-zinc-900 text-zinc-400 px-2 py-0.5 rounded border border-zinc-800">Mihomo MRS Manager</span>
+      <span class="font-semibold text-sm tracking-tight text-zinc-100 mr-0.5">Miru</span>
+
+      <div id="card-mihomo-status" class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs cursor-pointer hover:border-zinc-700 transition-all duration-300 ease-out select-none group shadow-sm" title="Click to ping Mihomo API">
+        <span id="stat-mihomo-dot" class="w-2 h-2 rounded-full bg-zinc-500 animate-pulse flex-shrink-0 transition-colors duration-200"></span>
+        <span id="stat-mihomo-status" class="text-xs font-medium text-zinc-300 transition-colors duration-200 whitespace-nowrap">Checking...</span>
+        <span id="stat-mihomo-version" class="overflow-hidden whitespace-nowrap transition-all duration-300 ease-out max-w-0 opacity-0 text-[10px] font-mono rounded bg-zinc-800/90 text-zinc-300 border border-transparent leading-tight flex items-center justify-center"></span>
+        <svg id="stat-mihomo-ping-icon" class="w-2.5 h-2.5 text-zinc-500 group-hover:text-zinc-300 transition-colors ml-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
       </div>
     </div>
 
@@ -87,42 +91,20 @@ tailwind.config = {
 
 <div class="w-full px-6 py-6 flex-1 space-y-6">
 
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full">
-    <div class="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <div class="text-xs font-medium text-zinc-400">Active Directives</div>
-      <div id="stat-active" class="text-2xl font-semibold tracking-tight text-zinc-100 mt-1">0</div>
-      <p class="text-[11px] text-zinc-500 mt-1 font-mono">RULE-SET rules</p>
-    </div>
-    <div class="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <div class="text-xs font-medium text-zinc-400">Rule Providers</div>
-      <div id="stat-providers" class="text-2xl font-semibold tracking-tight text-zinc-100 mt-1">0</div>
-      <p class="text-[11px] text-zinc-500 mt-1 font-mono">Registered in AST</p>
-    </div>
-    <div class="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <div class="text-xs font-medium text-zinc-400">Disk Binaries</div>
-      <div id="stat-files" class="text-2xl font-semibold tracking-tight text-zinc-100 mt-1">0</div>
-      <p class="text-[11px] text-zinc-500 mt-1 font-mono">.mrs in rules folder</p>
-    </div>
-    <div class="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <div class="text-xs font-medium text-zinc-400">Mihomo Status</div>
-      <div class="flex items-center gap-2 mt-1">
-        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-        <span class="text-base font-semibold tracking-tight text-zinc-100">Ready</span>
-      </div>
-      <p id="stat-config" class="text-[11px] text-zinc-500 mt-1 font-mono truncate">/etc/mihomo/config.yaml</p>
-    </div>
-  </div>
-
-  <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 border-b border-zinc-800 pb-3">
-    <div class="inline-flex h-9 items-center justify-center rounded-lg bg-zinc-900 p-1 text-zinc-400 border border-zinc-800" id="tabs">
-      <button data-tab="catalog" class="tab-btn px-3 py-1 text-xs font-medium rounded-md transition-all bg-zinc-800 text-zinc-50 shadow-sm">Rules Catalog</button>
-      <button data-tab="active" class="tab-btn px-3 py-1 text-xs font-medium rounded-md transition-all hover:text-zinc-100">Active Directives</button>
-      <button data-tab="local" class="tab-btn px-3 py-1 text-xs font-medium rounded-md transition-all hover:text-zinc-100">Config & Files</button>
-    </div>
-
-    <div class="text-xs text-zinc-500 font-mono" id="catalog-status-text">
-      Ready
-    </div>
+  <div class="border-b border-zinc-800">
+    <nav class="flex space-x-6 -mb-px" id="tabs">
+      <button data-tab="catalog" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-zinc-100 text-zinc-100 font-semibold">
+        <span>Rules Catalog</span>
+      </button>
+      <button data-tab="active" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700">
+        <span>Active Directives</span>
+        <span id="tab-count-active" class="hidden px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700/50">0</span>
+      </button>
+      <button data-tab="local" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700">
+        <span>Config & Files</span>
+        <span id="tab-count-files" class="hidden px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700/50">0</span>
+      </button>
+    </nav>
   </div>
 
   <main id="tab-content" class="w-full"></main>
@@ -133,7 +115,7 @@ tailwind.config = {
   <a href="https://github.com/paintingpromisesss/miru" target="_blank" rel="noopener" class="hover:text-zinc-300 transition-colors">GitHub Repository</a>
 </footer>
 
-<div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+<div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 max-w-sm w-full pointer-events-none px-4"></div>
 <div id="modal-container" class="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4"></div>
 
 <script>
@@ -158,7 +140,18 @@ const API = {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ enabled })
   }).then(r => r.json()),
-  reloadMihomo: () => fetch('/api/reload', { method: 'POST' }).then(r => r.json())
+  reloadMihomo: () => fetch('/api/reload', { method: 'POST' }).then(r => r.json()),
+  getMihomoStatus: () => fetch('/api/mihomo/status').then(r => r.json()),
+  previewRule: (name, url) => {
+    let q = [];
+    if (name) q.push(`name=${encodeURIComponent(name)}`);
+    if (url) q.push(`url=${encodeURIComponent(url)}`);
+    return fetch(`/api/rules/preview?${q.join('&')}`).then(async r => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      return data;
+    });
+  }
 };
 
 let state = {
@@ -167,10 +160,13 @@ let state = {
   catalog: [],
   catalogMap: {},
   catalogLoading: false,
+  catalogSyncError: null,
   catalogLoadedAt: '',
   catalogWarning: '',
   searchQuery: '',
   categoryFilter: 'all',
+  selectedCategories: new Set(),
+  selectedBehaviors: new Set(),
   page: 1,
   pageSize: 50,
 };
@@ -192,7 +188,7 @@ function showToast(message, type = 'info') {
     warning: 'bg-amber-500',
   }[type] || 'bg-zinc-400';
 
-  toast.className = `toast-slide border rounded-md p-3 text-xs shadow-lg flex items-center gap-2.5 pointer-events-auto ${border}`;
+  toast.className = `toast-slide border rounded-md p-3 text-xs shadow-lg flex items-center gap-2.5 pointer-events-auto w-full ${border}`;
   toast.innerHTML = `
     <span class="w-2 h-2 rounded-full ${dot} flex-shrink-0"></span>
     <div class="flex-1">${escapeHtml(message)}</div>
@@ -222,8 +218,10 @@ function setTab(tab) {
   state.currentTab = tab;
   document.querySelectorAll('.tab-btn').forEach(btn => {
     const active = btn.dataset.tab === tab;
-    btn.className = `tab-btn px-3 py-1 text-xs font-medium rounded-md transition-all ${
-      active ? 'bg-zinc-800 text-zinc-50 shadow-sm' : 'text-zinc-400 hover:text-zinc-100'
+    btn.className = `tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 ${
+      active
+        ? 'border-zinc-100 text-zinc-100 font-semibold'
+        : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
     }`;
   });
   render();
@@ -243,9 +241,95 @@ async function fetchLocal() {
   }
 }
 
+function renderCatalogSyncButton() {
+  const isLoading = state.catalogLoading;
+  const isError = !!state.catalogSyncError;
+
+  let btnClasses = 'h-8 flex items-center justify-center rounded-md border text-xs font-medium shadow-sm transition-all duration-300 ease-out ';
+  let labelClasses = 'overflow-hidden whitespace-nowrap transition-all duration-300 ease-out flex items-center gap-1.5 ';
+  let dotClasses = 'w-1.5 h-1.5 rounded-full flex-shrink-0 ';
+  let iconClasses = 'w-3.5 h-3.5 flex-shrink-0 transition-colors duration-200 ';
+  let labelText = '';
+  let title = 'Refresh catalog';
+
+  if (isError) {
+    btnClasses += 'px-2.5 border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 cursor-pointer';
+    labelClasses += 'max-w-[110px] opacity-100 mr-1.5';
+    dotClasses += 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.7)]';
+    iconClasses += 'text-red-400';
+    labelText = 'Sync failed';
+    title = `Sync failed: ${state.catalogSyncError}. Click to retry`;
+  } else if (isLoading) {
+    btnClasses += 'px-2.5 border-sky-500/40 bg-sky-500/10 text-sky-300 cursor-wait';
+    labelClasses += 'max-w-[95px] opacity-100 mr-1.5';
+    dotClasses += 'bg-sky-400 animate-pulse';
+    iconClasses += 'spin text-sky-400';
+    labelText = 'Syncing...';
+    title = 'Syncing rulesets...';
+  } else {
+    btnClasses += 'w-8 px-0 border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer';
+    labelClasses += 'max-w-0 opacity-0 pointer-events-none mr-0';
+  }
+
+  return `
+    <button id="cat-refresh-btn" type="button" title="${escapeHtml(title)}" class="${btnClasses}">
+      <span id="cat-sync-label" class="${labelClasses}">
+        <span id="cat-sync-dot" class="${dotClasses}"></span>
+        <span id="cat-sync-text" class="font-mono text-[11px]">${labelText}</span>
+      </span>
+      <svg id="cat-refresh-icon" class="${iconClasses}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg>
+    </button>
+  `;
+}
+
+function updateCatalogSyncStatusUI() {
+  const btn = document.getElementById('cat-refresh-btn');
+  const label = document.getElementById('cat-sync-label');
+  const dot = document.getElementById('cat-sync-dot');
+  const txt = document.getElementById('cat-sync-text');
+  const icon = document.getElementById('cat-refresh-icon');
+
+  if (!btn || !label || !dot || !txt || !icon) {
+    const wrap = document.getElementById('cat-sync-wrapper');
+    if (wrap) {
+      wrap.innerHTML = renderCatalogSyncButton();
+      const newBtn = document.getElementById('cat-refresh-btn');
+      if (newBtn) newBtn.addEventListener('click', () => fetchCatalog(true));
+    }
+    return;
+  }
+
+  const isLoading = state.catalogLoading;
+  const isError = !!state.catalogSyncError;
+
+  if (isError) {
+    btn.className = 'h-8 px-2.5 flex items-center justify-center rounded-md border text-xs font-medium shadow-sm transition-all duration-300 ease-out border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 cursor-pointer';
+    btn.title = `Sync failed: ${state.catalogSyncError}. Click to retry`;
+    label.className = 'overflow-hidden whitespace-nowrap transition-all duration-300 ease-out flex items-center gap-1.5 max-w-[110px] opacity-100 mr-1.5';
+    dot.className = 'w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.7)] flex-shrink-0';
+    txt.textContent = 'Sync failed';
+    icon.className = 'w-3.5 h-3.5 flex-shrink-0 transition-colors duration-200 text-red-400';
+  } else if (isLoading) {
+    btn.className = 'h-8 px-2.5 flex items-center justify-center rounded-md border text-xs font-medium shadow-sm transition-all duration-300 ease-out border-sky-500/40 bg-sky-500/10 text-sky-300 cursor-wait';
+    btn.title = 'Syncing rulesets...';
+    label.className = 'overflow-hidden whitespace-nowrap transition-all duration-300 ease-out flex items-center gap-1.5 max-w-[95px] opacity-100 mr-1.5';
+    dot.className = 'w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse flex-shrink-0';
+    txt.textContent = 'Syncing...';
+    icon.className = 'w-3.5 h-3.5 flex-shrink-0 transition-colors duration-200 spin text-sky-400';
+  } else {
+    btn.className = 'h-8 w-8 px-0 flex items-center justify-center rounded-md border text-xs font-medium shadow-sm transition-all duration-300 ease-out border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer';
+    btn.title = 'Refresh catalog';
+    label.className = 'overflow-hidden whitespace-nowrap transition-all duration-300 ease-out flex items-center gap-1.5 max-w-0 opacity-0 pointer-events-none mr-0';
+    icon.className = 'w-3.5 h-3.5 flex-shrink-0 transition-colors duration-200';
+  }
+}
+
 async function fetchCatalog(refresh = false) {
   state.catalogLoading = true;
-  document.getElementById('catalog-status-text').textContent = 'Fetching rulesets...';
+  state.catalogSyncError = null;
+  updateCatalogSyncStatusUI();
   if (state.currentTab === 'catalog') {
     const refreshIcon = document.getElementById('cat-refresh-icon');
     if (refreshIcon) refreshIcon.classList.add('spin');
@@ -262,16 +346,18 @@ async function fetchCatalog(refresh = false) {
     }
     state.catalogLoadedAt = res.loaded_at || '';
     state.catalogWarning = res.warning || '';
-    document.getElementById('catalog-status-text').textContent = `${state.catalog.length} rulesets available`;
+    state.catalogSyncError = null;
   } catch (err) {
-    document.getElementById('catalog-status-text').textContent = 'Catalog sync failed';
+    state.catalogSyncError = err.message || 'Sync failed';
     showToast('Catalog load error: ' + err.message, 'error');
   } finally {
     state.catalogLoading = false;
     const refreshIcon = document.getElementById('cat-refresh-icon');
     if (refreshIcon) refreshIcon.classList.remove('spin');
+    updateCatalogSyncStatusUI();
     if (state.currentTab === 'catalog') {
       updateFilterCounts();
+      updateCatalogHeaderFilters();
       updateCatalogTable();
     } else {
       render();
@@ -297,16 +383,83 @@ function updateGlobalQuicUI() {
   }
 }
 
+async function pingMihomoStatus() {
+  const icon = document.getElementById('stat-mihomo-ping-icon');
+  const dot = document.getElementById('stat-mihomo-dot');
+  if (icon) icon.classList.add('spin');
+  if (dot) dot.className = 'w-2 h-2 rounded-full bg-zinc-500 animate-pulse flex-shrink-0';
+
+  try {
+    const status = await API.getMihomoStatus();
+    renderMihomoStatus(status);
+  } catch (err) {
+    renderMihomoStatus({ alive: false, error: 'Unreachable' });
+  } finally {
+    if (icon) icon.classList.remove('spin');
+  }
+}
+
+function renderMihomoStatus(status) {
+  const dot = document.getElementById('stat-mihomo-dot');
+  const txt = document.getElementById('stat-mihomo-status');
+  const ver = document.getElementById('stat-mihomo-version');
+  const card = document.getElementById('card-mihomo-status');
+  if (!dot || !txt || !card || !ver) return;
+
+  if (status && status.alive) {
+    card.className = 'flex items-center gap-2 px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs cursor-pointer hover:border-zinc-700 transition-all duration-300 ease-out select-none group shadow-sm';
+    dot.className = 'w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] flex-shrink-0 transition-colors duration-200';
+    txt.className = 'text-xs font-medium text-zinc-200 transition-colors duration-200 whitespace-nowrap';
+    txt.textContent = 'Active';
+
+    if (status.version && status.version !== 'Connected') {
+      ver.textContent = status.version;
+      ver.className = 'overflow-hidden whitespace-nowrap transition-all duration-300 ease-out max-w-[80px] opacity-100 px-1.5 py-0.2 rounded bg-zinc-800/90 text-zinc-300 border border-zinc-700/60 font-mono text-[10px] leading-tight flex items-center justify-center';
+    } else {
+      ver.className = 'overflow-hidden whitespace-nowrap transition-all duration-300 ease-out max-w-0 opacity-0 px-0 py-0 border-transparent text-[10px] font-mono leading-tight';
+    }
+
+    const cfgPath = (state.local && state.local.config_path) || '';
+    card.title = `Mihomo is online${status.version ? ' (' + status.version + ')' : ''}${cfgPath ? '\nConfig: ' + cfgPath : ''}\nClick to ping`;
+  } else {
+    const isUnauth = status && status.error && status.error.toLowerCase().includes('unauthorized');
+    if (isUnauth) {
+      card.className = 'flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/40 text-xs cursor-pointer hover:border-amber-500/60 transition-all duration-300 ease-out select-none group shadow-sm';
+      dot.className = 'w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)] flex-shrink-0 transition-colors duration-200';
+      txt.className = 'text-xs font-medium text-amber-300 transition-colors duration-200 whitespace-nowrap';
+      txt.textContent = 'Unauthorized';
+    } else {
+      card.className = 'flex items-center gap-2 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/40 text-xs cursor-pointer hover:border-red-500/60 transition-all duration-300 ease-out select-none group shadow-sm';
+      dot.className = 'w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)] flex-shrink-0 transition-colors duration-200';
+      txt.className = 'text-xs font-medium text-red-300 transition-colors duration-200 whitespace-nowrap';
+      txt.textContent = 'Unreachable';
+    }
+
+    ver.className = 'overflow-hidden whitespace-nowrap transition-all duration-300 ease-out max-w-0 opacity-0 px-0 py-0 border-transparent text-[10px] font-mono leading-tight';
+
+    const errMsg = (status && status.error) ? status.error : 'Connection refused';
+    card.title = `Mihomo status: ${errMsg}\nClick to retry ping`;
+  }
+}
+
 function updateStats() {
   if (!state.local) return;
   const activeCount = (state.local.rules || []).filter(r => r.trim().startsWith('RULE-SET,')).length;
-  const provCount = (state.local.rule_providers || []).length;
   const fileCount = (state.local.disk_files || []).length;
-  document.getElementById('stat-active').textContent = activeCount;
-  document.getElementById('stat-providers').textContent = provCount;
-  document.getElementById('stat-files').textContent = fileCount;
-  if (state.local.config_path) {
-    document.getElementById('stat-config').textContent = state.local.config_path;
+
+  const tabActiveBadge = document.getElementById('tab-count-active');
+  if (tabActiveBadge) {
+    tabActiveBadge.textContent = activeCount;
+    tabActiveBadge.classList.remove('hidden');
+  }
+  const tabFilesBadge = document.getElementById('tab-count-files');
+  if (tabFilesBadge) {
+    tabFilesBadge.textContent = fileCount;
+    tabFilesBadge.classList.remove('hidden');
+  }
+
+  if (state.local.mihomo_status) {
+    renderMihomoStatus(state.local.mihomo_status);
   }
   updateGlobalQuicUI();
 }
@@ -321,20 +474,97 @@ function render() {
     bindActiveEvents();
   } else if (state.currentTab === 'local') {
     content.innerHTML = renderLocalView();
+    bindLocalEvents();
   }
 }
 
 function getFilteredCatalog() {
   const q = state.searchQuery.trim().toLowerCase();
-  const filter = state.categoryFilter;
+  const activeOnly = state.categoryFilter === 'applied';
 
   return state.catalog.filter(item => {
-    if (filter === 'geosite' && item.category !== 'geosite') return false;
-    if (filter === 'geoip' && item.category !== 'geoip') return false;
-    if (filter === 'applied' && !item.applied) return false;
+    if (activeOnly && !item.applied) return false;
+    if (state.selectedCategories.size > 0 && !state.selectedCategories.has(item.category)) return false;
+    if (state.selectedBehaviors.size > 0 && !state.selectedBehaviors.has(item.behavior)) return false;
     if (q && !item.name.toLowerCase().includes(q) && !item.path.toLowerCase().includes(q)) return false;
     return true;
   });
+}
+
+function getCatalogCategories() {
+  const map = {};
+  for (let i = 0; i < state.catalog.length; i++) {
+    const c = state.catalog[i].category || 'other';
+    map[c] = (map[c] || 0) + 1;
+  }
+  return Object.keys(map).sort().map(k => ({ name: k, count: map[k] }));
+}
+
+function getCatalogBehaviors() {
+  const map = {};
+  for (let i = 0; i < state.catalog.length; i++) {
+    const b = state.catalog[i].behavior || 'other';
+    map[b] = (map[b] || 0) + 1;
+  }
+  return Object.keys(map).sort().map(k => ({ name: k, count: map[k] }));
+}
+
+function renderCategoryFilterHeader() {
+  const cats = getCatalogCategories();
+  const hasFilter = state.selectedCategories.size > 0;
+  return `
+    <div class="relative inline-block text-left" id="wrap-cat-dropdown">
+      <button id="btn-filter-cat" type="button" class="inline-flex items-center gap-1.5 py-0.5 px-1.5 -ml-1.5 rounded hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 transition-colors font-medium">
+        <span>Category</span>
+        <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        ${hasFilter ? `<span class="w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.8)]"></span>` : ''}
+      </button>
+      <div id="menu-filter-cat" class="hidden absolute left-0 top-full mt-1.5 z-40 w-48 rounded-md border border-zinc-800 bg-zinc-950 p-2 shadow-2xl space-y-1.5 font-normal">
+        <div class="flex items-center justify-between pb-1.5 border-b border-zinc-800 text-[10px] text-zinc-400 font-medium">
+          <span>Categories (${cats.length})</span>
+          ${hasFilter ? `<button type="button" id="btn-reset-cat" class="text-sky-400 hover:text-sky-300">Clear</button>` : ''}
+        </div>
+        <div class="space-y-1 max-h-48 overflow-y-auto">
+          ${cats.map(c => `
+            <label class="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-zinc-900 cursor-pointer text-xs text-zinc-300 select-none">
+              <input type="checkbox" data-cat-choice="${escapeHtml(c.name)}" ${state.selectedCategories.has(c.name) ? 'checked' : ''} class="rounded bg-zinc-900 border-zinc-700 text-zinc-100">
+              <span class="flex-1 font-mono text-[11px]">${escapeHtml(c.name)}</span>
+              <span class="text-[10px] font-mono text-zinc-500">${c.count}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderBehaviorFilterHeader() {
+  const behs = getCatalogBehaviors();
+  const hasFilter = state.selectedBehaviors.size > 0;
+  return `
+    <div class="relative inline-block text-left" id="wrap-beh-dropdown">
+      <button id="btn-filter-beh" type="button" class="inline-flex items-center gap-1.5 py-0.5 px-1.5 -ml-1.5 rounded hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 transition-colors font-medium">
+        <span>Behavior</span>
+        <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        ${hasFilter ? `<span class="w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.8)]"></span>` : ''}
+      </button>
+      <div id="menu-filter-beh" class="hidden absolute left-0 top-full mt-1.5 z-40 w-48 rounded-md border border-zinc-800 bg-zinc-950 p-2 shadow-2xl space-y-1.5 font-normal">
+        <div class="flex items-center justify-between pb-1.5 border-b border-zinc-800 text-[10px] text-zinc-400 font-medium">
+          <span>Behaviors (${behs.length})</span>
+          ${hasFilter ? `<button type="button" id="btn-reset-beh" class="text-sky-400 hover:text-sky-300">Clear</button>` : ''}
+        </div>
+        <div class="space-y-1 max-h-48 overflow-y-auto">
+          ${behs.map(b => `
+            <label class="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-zinc-900 cursor-pointer text-xs text-zinc-300 select-none">
+              <input type="checkbox" data-beh-choice="${escapeHtml(b.name)}" ${state.selectedBehaviors.has(b.name) ? 'checked' : ''} class="rounded bg-zinc-900 border-zinc-700 text-zinc-100">
+              <span class="flex-1 font-mono text-[11px]">${escapeHtml(b.name)}</span>
+              <span class="text-[10px] font-mono text-zinc-500">${b.count}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function updateFilterCounts() {
@@ -348,32 +578,29 @@ function renderCatalogView() {
   return `
     <div class="space-y-4 w-full">
       <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between w-full">
-        <div class="relative flex-1">
-          <svg class="w-4 h-4 absolute left-3 top-2.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-          <input id="cat-search" type="text" value="${escapeHtml(state.searchQuery)}" placeholder="Filter rules by name or path (e.g. youtube, telegram, cn)..." class="h-9 w-full pl-9 pr-3 bg-zinc-900 border border-zinc-800 rounded-md text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-all">
+        <div class="relative w-full sm:w-72 md:w-80">
+          <svg class="w-4 h-4 absolute left-3 top-2.5 text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input id="cat-search" type="text" value="${escapeHtml(state.searchQuery)}" placeholder="Filter rules by name or path..." class="h-9 w-full pl-9 pr-3 bg-zinc-900 border border-zinc-800 rounded-md text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 transition-colors font-mono">
         </div>
 
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <button data-cat-filter="all" class="h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${filter === 'all' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">All (${state.catalog.length})</button>
-          <button data-cat-filter="geosite" class="h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${filter === 'geosite' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">Geosite</button>
-          <button data-cat-filter="geoip" class="h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${filter === 'geoip' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">GeoIP</button>
-          <button data-cat-filter="applied" class="h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${filter === 'applied' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">Active Only</button>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button data-cat-filter="all" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors ${filter === 'all' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">All (${state.catalog.length})</button>
+          <button data-cat-filter="applied" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors ${filter === 'applied' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">Active Only</button>
 
-          <button id="cat-refresh-btn" title="Refresh catalog" class="h-8 w-8 flex items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors">
-            <svg id="cat-refresh-icon" class="w-3.5 h-3.5 ${state.catalogLoading ? 'spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          </button>
+          <div id="cat-sync-wrapper" class="flex items-center">
+            ${renderCatalogSyncButton()}
+          </div>
         </div>
       </div>
 
-      <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
+      <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-visible w-full">
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
               <th class="py-2.5 px-4">Ruleset Name</th>
-              <th class="py-2.5 px-4">Category</th>
-              <th class="py-2.5 px-4">Behavior</th>
+              <th class="py-2.5 px-4" id="th-category">${renderCategoryFilterHeader()}</th>
+              <th class="py-2.5 px-4" id="th-behavior">${renderBehaviorFilterHeader()}</th>
               <th class="py-2.5 px-4">Size</th>
-              <th class="py-2.5 px-4">Status</th>
               <th class="py-2.5 px-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -394,7 +621,7 @@ function updateCatalogTable() {
   if (state.catalogLoading && state.catalog.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" class="py-12 text-center text-zinc-500 font-mono">
+        <td colspan="5" class="py-12 text-center text-zinc-500 font-mono">
           <div class="w-5 h-5 border-2 border-zinc-400 border-t-transparent rounded-full spin mx-auto mb-2"></div>
           Synchronizing catalog tree...
         </td>
@@ -413,7 +640,7 @@ function updateCatalogTable() {
   if (total === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" class="py-12 text-center text-zinc-500">
+        <td colspan="5" class="py-12 text-center text-zinc-500">
           No matching rulesets found in catalog.
         </td>
       </tr>
@@ -434,8 +661,18 @@ function updateCatalogTable() {
     rowsHtml += `
       <tr class="hover:bg-zinc-900/50 transition-colors ${item.applied ? 'bg-zinc-900/20' : ''}">
         <td class="py-2.5 px-4 font-mono">
-          <div class="font-semibold text-zinc-200">${escapeHtml(item.name)}</div>
-          <div class="text-[11px] text-zinc-500 font-mono truncate max-w-sm">${escapeHtml(item.path)}</div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-semibold text-zinc-200">${escapeHtml(item.name)}</span>
+            ${item.applied ? `
+              <span class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400 font-mono">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Active
+              </span>
+            ` : ''}
+            ${item.block_quic ? `
+              <span class="inline-flex items-center text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC</span>
+            ` : ''}
+          </div>
+          <div class="text-[11px] text-zinc-500 font-mono truncate max-w-xs sm:max-w-sm">${escapeHtml(item.path)}</div>
         </td>
         <td class="py-2.5 px-4">
           <span class="inline-flex items-center text-[10px] font-mono px-2 py-0.5 rounded border ${
@@ -446,21 +683,11 @@ function updateCatalogTable() {
         </td>
         <td class="py-2.5 px-4 font-mono text-zinc-400">${escapeHtml(item.behavior)}</td>
         <td class="py-2.5 px-4 font-mono text-zinc-400">${formatBytes(item.size)}</td>
-        <td class="py-2.5 px-4">
-          ${item.applied ? `
-            <div class="flex items-center gap-1.5">
-              <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active
-              </span>
-              ${item.block_quic ? `
-                <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC</span>
-              ` : ''}
-            </div>
-          ` : `
-            <span class="text-zinc-500 text-[11px]">Available</span>
-          `}
-        </td>
         <td class="py-2.5 px-4 text-right whitespace-nowrap">
+          <button data-preview-rule="${escapeHtml(item.name)}" data-preview-url="${escapeHtml(item.url)}" title="Preview ruleset contents" class="h-7 px-2 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors mr-1 inline-flex items-center gap-1">
+            <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            View
+          </button>
           ${item.applied ? `
             <button data-edit-rule="${escapeHtml(item.applied_name || item.name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">
               Edit
@@ -566,7 +793,7 @@ function bindCatalogEvents() {
       state.page = 1;
       document.querySelectorAll('[data-cat-filter]').forEach(b => {
         const active = b.dataset.catFilter === state.categoryFilter;
-        b.className = `h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${
+        b.className = `h-8 px-3 text-xs font-medium rounded-md border transition-colors ${
           active ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
         }`;
       });
@@ -582,6 +809,11 @@ function bindCatalogEvents() {
   const tbody = document.getElementById('cat-tbody');
   if (tbody) {
     tbody.addEventListener('click', (e) => {
+      const previewBtn = e.target.closest('[data-preview-rule]');
+      if (previewBtn) {
+        openPreviewModal(previewBtn.dataset.previewRule, previewBtn.dataset.previewUrl);
+        return;
+      }
       const editBtn = e.target.closest('[data-edit-rule]');
       if (editBtn) {
         openEditRuleModal(editBtn.dataset.editRule);
@@ -601,8 +833,105 @@ function bindCatalogEvents() {
     });
   }
 
+  bindFilterDropdowns();
   updateCatalogTable();
 }
+
+function updateCatalogHeaderFilters() {
+  const thCat = document.getElementById('th-category');
+  const thBeh = document.getElementById('th-behavior');
+  if (thCat) thCat.innerHTML = renderCategoryFilterHeader();
+  if (thBeh) thBeh.innerHTML = renderBehaviorFilterHeader();
+  bindFilterDropdowns();
+}
+
+function bindFilterDropdowns() {
+  const btnCat = document.getElementById('btn-filter-cat');
+  const menuCat = document.getElementById('menu-filter-cat');
+  const btnBeh = document.getElementById('btn-filter-beh');
+  const menuBeh = document.getElementById('menu-filter-beh');
+
+  if (btnCat && menuCat) {
+    btnCat.onclick = (e) => {
+      e.stopPropagation();
+      menuCat.classList.toggle('hidden');
+      if (menuBeh) menuBeh.classList.add('hidden');
+    };
+    menuCat.onclick = (e) => e.stopPropagation();
+  }
+
+  if (btnBeh && menuBeh) {
+    btnBeh.onclick = (e) => {
+      e.stopPropagation();
+      menuBeh.classList.toggle('hidden');
+      if (menuCat) menuCat.classList.add('hidden');
+    };
+    menuBeh.onclick = (e) => e.stopPropagation();
+  }
+
+  document.querySelectorAll('[data-cat-choice]').forEach(cb => {
+    cb.onchange = () => {
+      const cat = cb.dataset.catChoice;
+      if (cb.checked) {
+        state.selectedCategories.add(cat);
+      } else {
+        state.selectedCategories.delete(cat);
+      }
+      state.page = 1;
+      updateCatalogTable();
+      updateCatalogHeaderFilters();
+      const m = document.getElementById('menu-filter-cat');
+      if (m) m.classList.remove('hidden');
+    };
+  });
+
+  document.querySelectorAll('[data-beh-choice]').forEach(cb => {
+    cb.onchange = () => {
+      const beh = cb.dataset.behChoice;
+      if (cb.checked) {
+        state.selectedBehaviors.add(beh);
+      } else {
+        state.selectedBehaviors.delete(beh);
+      }
+      state.page = 1;
+      updateCatalogTable();
+      updateCatalogHeaderFilters();
+      const m = document.getElementById('menu-filter-beh');
+      if (m) m.classList.remove('hidden');
+    };
+  });
+
+  const resetCat = document.getElementById('btn-reset-cat');
+  if (resetCat) {
+    resetCat.onclick = () => {
+      state.selectedCategories.clear();
+      state.page = 1;
+      updateCatalogTable();
+      updateCatalogHeaderFilters();
+      const m = document.getElementById('menu-filter-cat');
+      if (m) m.classList.remove('hidden');
+    };
+  }
+
+  const resetBeh = document.getElementById('btn-reset-beh');
+  if (resetBeh) {
+    resetBeh.onclick = () => {
+      state.selectedBehaviors.clear();
+      state.page = 1;
+      updateCatalogTable();
+      updateCatalogHeaderFilters();
+      const m = document.getElementById('menu-filter-beh');
+      if (m) m.classList.remove('hidden');
+    };
+  }
+}
+
+document.addEventListener('click', () => {
+  const menuCat = document.getElementById('menu-filter-cat');
+  const menuBeh = document.getElementById('menu-filter-beh');
+  if (menuCat) menuCat.classList.add('hidden');
+  if (menuBeh) menuBeh.classList.add('hidden');
+});
 
 function renderActiveRulesView() {
   if (!state.local) return '<div class="text-center py-12 text-zinc-500 font-mono">Loading config...</div>';
@@ -686,6 +1015,10 @@ function renderActiveRulesView() {
                     `}
                   </td>
                   <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                    <button data-preview-rule="${escapeHtml(name)}" title="Preview ruleset contents" class="h-7 px-2 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors mr-1 inline-flex items-center gap-1">
+                      <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                      View
+                    </button>
                     <button data-edit-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">
                       Edit
                     </button>
@@ -704,6 +1037,12 @@ function renderActiveRulesView() {
 }
 
 function bindActiveEvents() {
+  document.querySelectorAll('[data-preview-rule]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openPreviewModal(btn.dataset.previewRule, '');
+    });
+  });
+
   document.querySelectorAll('[data-edit-rule]').forEach(btn => {
     btn.addEventListener('click', () => {
       openEditRuleModal(btn.dataset.editRule);
@@ -747,7 +1086,10 @@ function renderLocalView() {
             ` : s.disk_files.map(f => `
               <div class="px-3 py-2 flex items-center justify-between">
                 <span class="text-zinc-200">${escapeHtml(f.name)}</span>
-                <span class="text-zinc-500">${formatBytes(f.size)} · ${escapeHtml(f.mod_time)}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-zinc-500">${formatBytes(f.size)} · ${escapeHtml(f.mod_time)}</span>
+                  <button data-preview-file="${escapeHtml(f.name)}" class="h-6 px-2 text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors">View</button>
+                </div>
               </div>
             `).join('')}
           </div>
@@ -770,6 +1112,16 @@ function renderLocalView() {
       </div>
     </div>
   `;
+}
+
+function bindLocalEvents() {
+  document.querySelectorAll('[data-preview-file]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fname = btn.dataset.previewFile;
+      const ruleName = fname.replace(/\.(mrs|yaml|txt)$/i, '');
+      openPreviewModal(ruleName, '');
+    });
+  });
 }
 
 function openAddRuleModal(preset = null) {
@@ -1109,6 +1461,164 @@ function confirmDeleteRule(name) {
   };
 }
 
+async function openPreviewModal(name, url) {
+  const modal = document.getElementById('modal-container');
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-2xl w-full space-y-4 shadow-2xl relative flex flex-col max-h-[85vh]" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div>
+          <h3 class="font-semibold text-sm text-zinc-100 flex items-center gap-2">
+            Rule Preview: <span class="font-mono text-zinc-200">${escapeHtml(name || url)}</span>
+          </h3>
+          <p class="text-xs text-zinc-500 mt-0.5">Fetching and decoding ruleset content...</p>
+        </div>
+        <button id="modal-preview-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
+      </div>
+
+      <div id="preview-body" class="flex-1 flex flex-col items-center justify-center py-12 text-zinc-500 font-mono text-xs">
+        <div class="w-5 h-5 border-2 border-zinc-400 border-t-transparent rounded-full spin mb-2"></div>
+        Downloading & decoding MRS payload...
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+
+  document.getElementById('modal-preview-close').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  try {
+    const data = await API.previewRule(name, url);
+    renderPreviewContent(data, closeModal);
+  } catch (err) {
+    const body = document.getElementById('preview-body');
+    if (body) {
+      body.innerHTML = `
+        <div class="text-center space-y-2 py-6">
+          <div class="text-red-400 font-medium">Failed to load rule preview</div>
+          <div class="text-zinc-500 text-[11px] max-w-md font-mono">${escapeHtml(err.message)}</div>
+          <button id="preview-retry" class="mt-2 h-7 px-3 text-xs bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 rounded">Retry</button>
+        </div>
+      `;
+      const retry = document.getElementById('preview-retry');
+      if (retry) retry.onclick = () => openPreviewModal(name, url);
+    }
+  }
+}
+
+function renderPreviewContent(data, closeModal) {
+  const modal = document.getElementById('modal-container');
+  const allRules = data.rules || [];
+  let filteredRules = allRules;
+
+  const sourceBadge = data.source === 'local'
+    ? '<span class="px-2 py-0.5 text-[10px] font-mono rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-medium">Local Disk</span>'
+    : '<span class="px-2 py-0.5 text-[10px] font-mono rounded border bg-sky-500/10 text-sky-400 border-sky-500/20 font-medium">Remote GitHub</span>';
+
+  const typeBadge = `<span class="px-2 py-0.5 text-[10px] font-mono rounded border bg-purple-500/10 text-purple-400 border-purple-500/20 uppercase font-medium">${escapeHtml(data.type || 'mrs')}</span>`;
+
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-3xl w-full space-y-4 shadow-2xl relative flex flex-col max-h-[88vh]" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h3 class="font-semibold text-sm text-zinc-100 font-mono">${escapeHtml(data.name)}</h3>
+            ${sourceBadge}
+            ${typeBadge}
+            <span class="text-xs font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">${data.count.toLocaleString()} rules</span>
+          </div>
+          <p class="text-xs text-zinc-500 mt-1">Decoded rule list representation</p>
+        </div>
+        <button id="modal-preview-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 pt-1">
+        <div class="relative flex-1">
+          <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input id="preview-search" type="text" placeholder="Filter rules inside (e.g. .com, 1.1.1)..." class="h-8 w-full pl-8 pr-3 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 font-mono">
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="preview-match-count" class="text-[11px] font-mono text-zinc-500 whitespace-nowrap">${allRules.length.toLocaleString()} total</span>
+          <button id="preview-copy-btn" class="h-8 px-2.5 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded border border-zinc-800 transition-colors flex items-center gap-1.5 shadow-sm">
+            <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            <span id="preview-copy-text">Copy All</span>
+          </button>
+          <button id="preview-download-btn" class="h-8 px-2.5 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded border border-zinc-800 transition-colors flex items-center gap-1.5 shadow-sm">
+            <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            .txt
+          </button>
+        </div>
+      </div>
+
+      <div class="flex-1 min-h-[320px] max-h-[55vh] overflow-y-auto border border-zinc-800 rounded-md bg-zinc-950/80 p-3 font-mono text-xs select-all leading-relaxed" id="preview-rules-container">
+        <pre id="preview-rules-pre" class="text-zinc-300 font-mono whitespace-pre">${escapeHtml(allRules.join('\n'))}</pre>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-zinc-800/80 text-xs">
+        <span class="text-[11px] text-zinc-500 font-mono">Tip: Select all with Ctrl+A or use the search bar</span>
+        <button id="preview-close-footer" class="h-8 px-4 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Close</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('modal-preview-close').onclick = closeModal;
+  document.getElementById('preview-close-footer').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  const searchInput = document.getElementById('preview-search');
+  const rulesPre = document.getElementById('preview-rules-pre');
+  const matchCount = document.getElementById('preview-match-count');
+  const copyBtn = document.getElementById('preview-copy-btn');
+  const copyText = document.getElementById('preview-copy-text');
+  const downloadBtn = document.getElementById('preview-download-btn');
+
+  let filterTimeout;
+  searchInput.oninput = (e) => {
+    clearTimeout(filterTimeout);
+    filterTimeout = setTimeout(() => {
+      const term = e.target.value.trim().toLowerCase();
+      if (!term) {
+        filteredRules = allRules;
+        rulesPre.textContent = allRules.join('\n');
+        matchCount.textContent = `${allRules.length.toLocaleString()} total`;
+      } else {
+        filteredRules = allRules.filter(r => r.toLowerCase().includes(term));
+        rulesPre.textContent = filteredRules.join('\n');
+        matchCount.textContent = `${filteredRules.length.toLocaleString()} of ${allRules.length.toLocaleString()}`;
+      }
+    }, 80);
+  };
+
+  copyBtn.onclick = () => {
+    const textToCopy = filteredRules.join('\n');
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      copyText.textContent = 'Copied!';
+      setTimeout(() => { copyText.textContent = 'Copy All'; }, 2000);
+    }).catch(() => {
+      showToast('Failed to copy to clipboard', 'error');
+    });
+  };
+
+  downloadBtn.onclick = () => {
+    const blob = new Blob([filteredRules.join('\n')], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${data.name || 'ruleset'}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+}
+
 document.getElementById('btn-custom-rule').addEventListener('click', () => {
   openAddRuleModal(null);
 });
@@ -1127,7 +1637,12 @@ document.getElementById('btn-reload-mihomo').addEventListener('click', async () 
     showToast('Failed to reach Mihomo API: ' + err.message, 'error');
   } finally {
     icon.classList.remove('spin');
+    await pingMihomoStatus();
   }
+});
+
+document.getElementById('card-mihomo-status')?.addEventListener('click', () => {
+  pingMihomoStatus();
 });
 
 document.getElementById('btn-toggle-quic').addEventListener('click', async () => {
@@ -1154,6 +1669,7 @@ async function init() {
   await fetchLocal();
   await fetchCatalog(false);
   setTab('catalog');
+  setInterval(pingMihomoStatus, 15000);
 }
 
 init();

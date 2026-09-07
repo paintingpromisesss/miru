@@ -203,3 +203,115 @@ func TestWebUIEmbedded(t *testing.T) {
 		t.Fatalf("Embedded index.html does not contain expected title: %s", body)
 	}
 }
+
+func TestAPI_RulePreview(t *testing.T) {
+	_, mux, _, rulesDir := setupTestServer(t)
+
+	// 1. Test local text rule preview
+	localRulePath := filepath.Join(rulesDir, "custom.txt")
+	_ = os.WriteFile(localRulePath, []byte("domain:example.com\n+.google.com\n1.1.1.1/32\n"), 0644)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rules/preview?name=custom", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Preview local rule failed with HTTP %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var preview RulePreviewResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("Unmarshal preview response: %v", err)
+	}
+
+	if preview.Source != "local" {
+		t.Errorf("Expected source 'local', got %s", preview.Source)
+	}
+	if preview.Count != 3 {
+		t.Errorf("Expected 3 rules, got %d", preview.Count)
+	}
+
+	// 2. Test remote MRS preview (Telegram GeoIP)
+	remoteURL := "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/telegram.mrs"
+	reqRemote := httptest.NewRequest(http.MethodGet, "/api/rules/preview?url="+remoteURL, nil)
+	recRemote := httptest.NewRecorder()
+	mux.ServeHTTP(recRemote, reqRemote)
+
+	if recRemote.Code == http.StatusOK {
+		var remotePreview RulePreviewResponse
+		if err := json.Unmarshal(recRemote.Body.Bytes(), &remotePreview); err != nil {
+			t.Fatalf("Unmarshal remote preview response: %v", err)
+		}
+		if remotePreview.Source != "remote" {
+			t.Errorf("Expected source 'remote', got %s", remotePreview.Source)
+		}
+		if remotePreview.Type != "ipcidr" {
+			t.Errorf("Expected type 'ipcidr', got %s", remotePreview.Type)
+		}
+		if remotePreview.Count == 0 {
+			t.Errorf("Expected non-zero rules count")
+		}
+	}
+}
+
+func TestCheckMihomo(t *testing.T) {
+	// 1. Mock Mihomo server that returns version
+	mockMihomo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/version" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer testsecret" {
+			http.Error(w, `{"message":"Unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"version":"v1.19.2","meta":true}`))
+	}))
+	defer mockMihomo.Close()
+
+	// Server with correct secret
+	srv := New(Config{
+		MihomoAPI:    mockMihomo.URL,
+		MihomoSecret: "testsecret",
+	})
+	status := srv.CheckMihomo(t.Context())
+	if !status.Alive {
+		t.Fatalf("Expected alive=true, got error: %s", status.Error)
+	}
+	if status.Version != "v1.19.2" {
+		t.Fatalf("Expected version 'v1.19.2', got '%s'", status.Version)
+	}
+
+	// Server with wrong secret
+	srvWrong := New(Config{
+		MihomoAPI:    mockMihomo.URL,
+		MihomoSecret: "wrongsecret",
+	})
+	statusWrong := srvWrong.CheckMihomo(t.Context())
+	if statusWrong.Alive {
+		t.Fatalf("Expected alive=false for wrong secret")
+	}
+	if !strings.Contains(statusWrong.Error, "Unauthorized") {
+		t.Fatalf("Expected unauthorized error, got: %s", statusWrong.Error)
+	}
+
+	// Test GET /api/mihomo/status route
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/mihomo/status", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/mihomo/status returned %d", rec.Code)
+	}
+	var apiStatus MihomoStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &apiStatus); err != nil {
+		t.Fatalf("Unmarshal api status: %v", err)
+	}
+	if !apiStatus.Alive || apiStatus.Version != "v1.19.2" {
+		t.Fatalf("Unexpected api status: %+v", apiStatus)
+	}
+}

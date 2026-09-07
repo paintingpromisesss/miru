@@ -26,7 +26,7 @@ var (
 	refreshTTL   = flag.Duration("catalog-ttl", 12*time.Hour, "Catalog cache TTL in memory (default 12h)")
 	githubProxy  = flag.String("github-proxy", "auto", "Proxy URL for GitHub requests ('auto' to read mixed-port/port from config, 'none' to disable)")
 
-	AppVersion = "dev"
+	AppVersion = "1.1.0"
 )
 
 func main() {
