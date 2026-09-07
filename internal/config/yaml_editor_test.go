@@ -154,4 +154,39 @@ func TestYAMLEditor(t *testing.T) {
 			t.Errorf("apple provider still present: %+v", p)
 		}
 	}
+
+	// Test QUIC rule support
+	if err := editor.AddRule("youtube", "UNBLOCK"); err != nil {
+		t.Fatalf("AddRule youtube failed: %v", err)
+	}
+	if editor.HasQuicRule("youtube") {
+		t.Errorf("expected no QUIC rule for youtube initially")
+	}
+
+	if err := editor.SetQuicRule("youtube", true); err != nil {
+		t.Fatalf("SetQuicRule true failed: %v", err)
+	}
+	if !editor.HasQuicRule("youtube") {
+		t.Errorf("expected QUIC rule for youtube after SetQuicRule true")
+	}
+
+	rulesWithQuic := editor.GetRules()
+	foundQuicBeforeRule := false
+	for i, r := range rulesWithQuic {
+		if strings.Contains(r, "AND,") && strings.Contains(r, "youtube") && strings.Contains(r, "REJECT") {
+			if i+1 < len(rulesWithQuic) && strings.Contains(rulesWithQuic[i+1], "RULE-SET,youtube") {
+				foundQuicBeforeRule = true
+			}
+		}
+	}
+	if !foundQuicBeforeRule {
+		t.Errorf("expected QUIC rule immediately before RULE-SET,youtube, got rules: %v", rulesWithQuic)
+	}
+
+	if err := editor.RemoveRule("youtube"); err != nil {
+		t.Fatalf("RemoveRule youtube failed: %v", err)
+	}
+	if editor.HasQuicRule("youtube") {
+		t.Errorf("expected QUIC rule for youtube to be removed with RemoveRule")
+	}
 }

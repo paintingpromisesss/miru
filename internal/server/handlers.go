@@ -29,13 +29,15 @@ type RulesDirEntry struct {
 }
 
 type CatalogItemResponse struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Category string `json:"category"`
-	Behavior string `json:"behavior"`
-	Size     int    `json:"size"`
-	URL      string `json:"url"`
-	Applied  bool   `json:"applied"`
+	Name        string `json:"name"`
+	AppliedName string `json:"applied_name,omitempty"`
+	Path        string `json:"path"`
+	Category    string `json:"category"`
+	Behavior    string `json:"behavior"`
+	Size        int    `json:"size"`
+	URL         string `json:"url"`
+	Applied     bool   `json:"applied"`
+	BlockQUIC   bool   `json:"block_quic"`
 }
 
 type AddRuleRequest struct {
@@ -45,6 +47,16 @@ type AddRuleRequest struct {
 	URL        string `json:"url"`
 	ProxyGroup string `json:"proxy_group"`
 	Path       string `json:"path"`
+	BlockQUIC  bool   `json:"block_quic"`
+}
+
+type EditRuleRequest struct {
+	Name       string `json:"name"`
+	ProxyGroup string `json:"proxy_group"`
+	BlockQUIC  bool   `json:"block_quic"`
+	URL        string `json:"url,omitempty"`
+	Behavior   string `json:"behavior,omitempty"`
+	Format     string `json:"format,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -89,11 +101,33 @@ func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	quicBlocked := make([]string, 0)
+	for _, prov := range providers {
+		if s.editor.HasQuicRule(prov.Name) {
+			quicBlocked = append(quicBlocked, prov.Name)
+		}
+	}
+	for _, name := range activeSetNames {
+		if s.editor.HasQuicRule(name) {
+			found := false
+			for _, q := range quicBlocked {
+				if strings.EqualFold(q, name) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				quicBlocked = append(quicBlocked, name)
+			}
+		}
+	}
+
 	resp := map[string]interface{}{
 		"rule_providers":    providers,
 		"rules":             rules,
 		"proxy_groups":      groups,
 		"applied_rule_sets": activeSetNames,
+		"quic_blocked":      quicBlocked,
 		"rules_dir":         s.rulesDir,
 		"disk_files":        diskFiles,
 		"config_path":       s.configPath,
@@ -122,31 +156,33 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	activeNames := s.editor.GetRuleSetNames()
-	appliedSet := make(map[string]bool, len(activeNames))
+	appliedSet := make(map[string]string, len(activeNames))
 	for _, name := range activeNames {
-		appliedSet[strings.ToLower(name)] = true
+		appliedSet[strings.ToLower(name)] = name
 	}
 
 	for _, prov := range s.editor.GetRuleProviders() {
-		appliedSet[strings.ToLower(prov.Name)] = true
+		appliedSet[strings.ToLower(prov.Name)] = prov.Name
 	}
 
 	items := make([]CatalogItemResponse, len(files))
 	for i, f := range files {
 		cleanName := f.Name
-		isApplied := appliedSet[strings.ToLower(cleanName)]
+		appliedName, isApplied := appliedSet[strings.ToLower(cleanName)]
 		if !isApplied && f.Category != "" {
-			isApplied = appliedSet[strings.ToLower(f.Category+"-"+cleanName)]
+			appliedName, isApplied = appliedSet[strings.ToLower(f.Category+"-"+cleanName)]
 		}
 
 		items[i] = CatalogItemResponse{
-			Name:     cleanName,
-			Path:     f.Path,
-			Category: f.Category,
-			Behavior: f.Behavior,
-			Size:     f.Size,
-			URL:      f.URL,
-			Applied:  isApplied,
+			Name:        cleanName,
+			AppliedName: appliedName,
+			Path:        f.Path,
+			Category:    f.Category,
+			Behavior:    f.Behavior,
+			Size:        f.Size,
+			URL:         f.URL,
+			Applied:     isApplied,
+			BlockQUIC:   isApplied && s.editor.HasQuicRule(appliedName),
 		}
 	}
 
@@ -170,10 +206,12 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		s.handleAddRule(w, r)
+	case http.MethodPut:
+		s.handleEditRule(w, r)
 	case http.MethodDelete:
 		s.handleDeleteRule(w, r)
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "Only POST or DELETE allowed on /api/rules")
+		writeError(w, http.StatusMethodNotAllowed, "Only POST, PUT or DELETE allowed on /api/rules")
 	}
 }
 
@@ -240,6 +278,10 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.BlockQUIC {
+		_ = s.editor.SetQuicRule(req.Name, true)
+	}
+
 	if err := s.editor.Save(); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save config: %v", err))
 		return
@@ -254,6 +296,54 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Status:  "ok",
 		Message: fmt.Sprintf("Rule %q added for group %q and Mihomo reloaded", req.Name, req.ProxyGroup),
+	})
+}
+
+func (s *Server) handleEditRule(w http.ResponseWriter, r *http.Request) {
+	var req EditRuleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON request body")
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	req.ProxyGroup = strings.TrimSpace(req.ProxyGroup)
+
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "Rule name is required")
+		return
+	}
+
+	if req.ProxyGroup != "" {
+		if err := s.editor.AddRule(req.Name, req.ProxyGroup); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update rule target: %v", err))
+			return
+		}
+	}
+
+	if err := s.editor.SetQuicRule(req.Name, req.BlockQUIC); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update QUIC rule: %v", err))
+		return
+	}
+
+	if req.URL != "" || req.Behavior != "" || req.Format != "" {
+		_ = s.editor.UpdateRuleProvider(req.Name, req.URL, req.Behavior, req.Format)
+	}
+
+	if err := s.editor.Save(); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save config: %v", err))
+		return
+	}
+
+	go func() {
+		if err := s.ReloadMihomo(); err != nil {
+			log.Printf("[Mihomo] Reload warning after edit %s: %v", req.Name, err)
+		}
+	}()
+
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Status:  "ok",
+		Message: fmt.Sprintf("Rule %q updated successfully", req.Name),
 	})
 }
 

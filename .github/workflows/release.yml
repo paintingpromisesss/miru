@@ -33,12 +33,6 @@ jobs:
             goarch: mipsle
             gomips: softfloat
             suffix: linux-mipsle
-          - goos: windows
-            goarch: amd64
-            suffix: windows-amd64.exe
-          - goos: windows
-            goarch: arm64
-            suffix: windows-arm64.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -68,10 +62,7 @@ jobs:
             -o "bin/${BIN}" \
             ./cmd/miru
 
-          case "${BIN}" in
-            *.exe) UPX_BIN="${BIN%.exe}-upx.exe" ;;
-            *)     UPX_BIN="${BIN}-upx" ;;
-          esac
+          UPX_BIN="${BIN}-upx"
           cp "bin/${BIN}" "bin/${UPX_BIN}"
           upx --best --lzma "bin/${UPX_BIN}" || true
 
@@ -110,5 +101,3 @@ jobs:
             | `miru-linux-amd64` | `miru-linux-amd64-upx` | x86-64 routers, Mini PCs, servers |
             | `miru-linux-mips` | `miru-linux-mips-upx` | Atheros AR7xxx / AR9xxx (big-endian) |
             | `miru-linux-mipsle` | `miru-linux-mipsle-upx` | MediaTek MT7620 / MT7621 / MT7628 (little-endian) |
-            | `miru-windows-amd64.exe` | `miru-windows-amd64-upx.exe` | Windows x86_64 |
-            | `miru-windows-arm64.exe` | `miru-windows-arm64-upx.exe` | Windows ARM64 |

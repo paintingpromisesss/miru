@@ -448,7 +448,140 @@ func (e *YAMLEditor) RemoveRule(ruleSet string) error {
 		return fmt.Errorf("rule for rule-set %q not found", ruleSet)
 	}
 
-	section.Content = filtered
+	// Also remove any associated QUIC block rule
+	var finalFiltered []*yaml.Node
+	for _, n := range filtered {
+		if n.Kind == yaml.ScalarNode && isQuicRuleForRuleSet(n.Value, ruleSet) {
+			continue
+		}
+		finalFiltered = append(finalFiltered, n)
+	}
+
+	section.Content = finalFiltered
+	return nil
+}
+
+func isQuicRuleForRuleSet(ruleStr, ruleSet string) bool {
+	r := strings.ToLower(ruleStr)
+	name := strings.ToLower(ruleSet)
+	return strings.Contains(r, "and,") &&
+		(strings.Contains(r, "rule-set,"+name) || strings.Contains(r, "rule-set, "+name)) &&
+		strings.Contains(r, "443") &&
+		strings.Contains(r, "udp") &&
+		strings.Contains(r, "reject")
+}
+
+func (e *YAMLEditor) HasQuicRule(ruleSet string) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	section := e.readSection("rules")
+	if section == nil || section.Kind != yaml.SequenceNode {
+		return false
+	}
+	for _, n := range section.Content {
+		if n.Kind == yaml.ScalarNode && isQuicRuleForRuleSet(n.Value, ruleSet) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *YAMLEditor) SetQuicRule(ruleSet string, enable bool) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	section := e.ensureSection("rules", yaml.SequenceNode, "!!seq")
+	if section.Kind != yaml.SequenceNode {
+		section.Kind = yaml.SequenceNode
+		section.Tag = "!!seq"
+	}
+
+	quicRuleStr := fmt.Sprintf("AND,((RULE-SET,%s),(NETWORK,udp),(DST-PORT,443)),REJECT", ruleSet)
+
+	var filtered []*yaml.Node
+	ruleSetIdx := -1
+	for _, n := range section.Content {
+		if n.Kind == yaml.ScalarNode {
+			if isQuicRuleForRuleSet(n.Value, ruleSet) {
+				continue
+			}
+			parts := strings.Split(n.Value, ",")
+			if len(parts) >= 2 && strings.EqualFold(strings.TrimSpace(parts[0]), "RULE-SET") && strings.EqualFold(strings.TrimSpace(parts[1]), ruleSet) {
+				ruleSetIdx = len(filtered)
+			}
+		}
+		filtered = append(filtered, n)
+	}
+
+	if !enable {
+		section.Content = filtered
+		return nil
+	}
+
+	quicNode := &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!str",
+		Value: quicRuleStr,
+	}
+
+	if ruleSetIdx >= 0 {
+		before := append([]*yaml.Node{}, filtered[:ruleSetIdx]...)
+		after := append([]*yaml.Node{}, filtered[ruleSetIdx:]...)
+		section.Content = append(before, append([]*yaml.Node{quicNode}, after...)...)
+	} else {
+		insertIdx := len(filtered)
+		for i, n := range filtered {
+			if n.Kind == yaml.ScalarNode {
+				parts := strings.Split(n.Value, ",")
+				if len(parts) > 0 && strings.EqualFold(strings.TrimSpace(parts[0]), "MATCH") {
+					insertIdx = i
+					break
+				}
+			}
+		}
+		before := append([]*yaml.Node{}, filtered[:insertIdx]...)
+		after := append([]*yaml.Node{}, filtered[insertIdx:]...)
+		section.Content = append(before, append([]*yaml.Node{quicNode}, after...)...)
+	}
+
+	return nil
+}
+
+func (e *YAMLEditor) UpdateRuleProvider(name, url, behavior, format string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	section := e.readSection("rule-providers")
+	if section == nil || section.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	for i := 0; i+1 < len(section.Content); i += 2 {
+		if section.Content[i].Value == name {
+			val := section.Content[i+1]
+			if val.Kind == yaml.MappingNode {
+				for j := 0; j+1 < len(val.Content); j += 2 {
+					k := val.Content[j].Value
+					switch k {
+					case "url":
+						if url != "" {
+							val.Content[j+1].Value = url
+						}
+					case "behavior":
+						if behavior != "" {
+							val.Content[j+1].Value = behavior
+						}
+					case "format":
+						if format != "" {
+							val.Content[j+1].Value = format
+						}
+					}
+				}
+			}
+			return nil
+		}
+	}
 	return nil
 }
 

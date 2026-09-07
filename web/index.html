@@ -140,6 +140,11 @@ const API = {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   }),
+  editRule: (data) => fetch('/api/rules', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }),
   deleteRule: (name, deleteFile = true) => fetch(`/api/rules?name=${encodeURIComponent(name)}&delete_file=${deleteFile}`, {
     method: 'DELETE'
   }),
@@ -150,11 +155,14 @@ let state = {
   currentTab: 'catalog',
   local: null,
   catalog: [],
+  catalogMap: {},
   catalogLoading: false,
   catalogLoadedAt: '',
   catalogWarning: '',
   searchQuery: '',
   categoryFilter: 'all',
+  page: 1,
+  pageSize: 50,
 };
 
 function showToast(message, type = 'info') {
@@ -228,10 +236,20 @@ async function fetchLocal() {
 async function fetchCatalog(refresh = false) {
   state.catalogLoading = true;
   document.getElementById('catalog-status-text').textContent = 'Fetching rulesets...';
-  if (state.currentTab === 'catalog') render();
+  if (state.currentTab === 'catalog') {
+    const refreshIcon = document.getElementById('cat-refresh-icon');
+    if (refreshIcon) refreshIcon.classList.add('spin');
+    updateCatalogTable();
+  }
   try {
     const res = await API.getCatalog(refresh);
     state.catalog = res.items || [];
+    state.catalogMap = {};
+    for (let i = 0; i < state.catalog.length; i++) {
+      const it = state.catalog[i];
+      state.catalogMap[it.path] = it;
+      if (!state.catalogMap[it.name]) state.catalogMap[it.name] = it;
+    }
     state.catalogLoadedAt = res.loaded_at || '';
     state.catalogWarning = res.warning || '';
     document.getElementById('catalog-status-text').textContent = `${state.catalog.length} rulesets available`;
@@ -240,7 +258,14 @@ async function fetchCatalog(refresh = false) {
     showToast('Catalog load error: ' + err.message, 'error');
   } finally {
     state.catalogLoading = false;
-    render();
+    const refreshIcon = document.getElementById('cat-refresh-icon');
+    if (refreshIcon) refreshIcon.classList.remove('spin');
+    if (state.currentTab === 'catalog') {
+      updateFilterCounts();
+      updateCatalogTable();
+    } else {
+      render();
+    }
   }
 }
 
@@ -270,17 +295,26 @@ function render() {
   }
 }
 
-function renderCatalogView() {
-  const q = state.searchQuery.toLowerCase();
+function getFilteredCatalog() {
+  const q = state.searchQuery.trim().toLowerCase();
   const filter = state.categoryFilter;
 
-  const filtered = state.catalog.filter(item => {
+  return state.catalog.filter(item => {
     if (filter === 'geosite' && item.category !== 'geosite') return false;
     if (filter === 'geoip' && item.category !== 'geoip') return false;
     if (filter === 'applied' && !item.applied) return false;
     if (q && !item.name.toLowerCase().includes(q) && !item.path.toLowerCase().includes(q)) return false;
     return true;
   });
+}
+
+function updateFilterCounts() {
+  const allBtn = document.querySelector('[data-cat-filter="all"]');
+  if (allBtn) allBtn.textContent = `All (${state.catalog.length})`;
+}
+
+function renderCatalogView() {
+  const filter = state.categoryFilter;
 
   return `
     <div class="space-y-4 w-full">
@@ -297,7 +331,7 @@ function renderCatalogView() {
           <button data-cat-filter="applied" class="h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${filter === 'applied' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">Active Only</button>
 
           <button id="cat-refresh-btn" title="Refresh catalog" class="h-8 w-8 flex items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors">
-            <svg class="w-3.5 h-3.5 ${state.catalogLoading ? 'spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <svg id="cat-refresh-icon" class="w-3.5 h-3.5 ${state.catalogLoading ? 'spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           </button>
         </div>
       </div>
@@ -314,82 +348,200 @@ function renderCatalogView() {
               <th class="py-2.5 px-4 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-zinc-800/60 text-xs">
-            ${state.catalogLoading && filtered.length === 0 ? `
-              <tr>
-                <td colspan="6" class="py-12 text-center text-zinc-500 font-mono">
-                  <div class="w-5 h-5 border-2 border-zinc-400 border-t-transparent rounded-full spin mx-auto mb-2"></div>
-                  Synchronizing catalog tree...
-                </td>
-              </tr>
-            ` : filtered.length === 0 ? `
-              <tr>
-                <td colspan="6" class="py-12 text-center text-zinc-500">
-                  No matching rulesets found in catalog.
-                </td>
-              </tr>
-            ` : filtered.map(item => `
-              <tr class="hover:bg-zinc-900/50 transition-colors ${item.applied ? 'bg-zinc-900/20' : ''}">
-                <td class="py-2.5 px-4 font-mono">
-                  <div class="font-semibold text-zinc-200">${escapeHtml(item.name)}</div>
-                  <div class="text-[11px] text-zinc-500 font-mono truncate max-w-sm">${escapeHtml(item.path)}</div>
-                </td>
-                <td class="py-2.5 px-4">
-                  <span class="inline-flex items-center text-[10px] font-mono px-2 py-0.5 rounded border ${
-                    item.category === 'geosite'
-                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
-                      : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                  }">${escapeHtml(item.category)}</span>
-                </td>
-                <td class="py-2.5 px-4 font-mono text-zinc-400">${escapeHtml(item.behavior)}</td>
-                <td class="py-2.5 px-4 font-mono text-zinc-400">${formatBytes(item.size)}</td>
-                <td class="py-2.5 px-4">
-                  ${item.applied ? `
-                    <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
-                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active
-                    </span>
-                  ` : `
-                    <span class="text-zinc-500 text-[11px]">Available</span>
-                  `}
-                </td>
-                <td class="py-2.5 px-4 text-right">
-                  ${item.applied ? `
-                    <button data-remove="${escapeHtml(item.name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">
-                      Remove
-                    </button>
-                  ` : `
-                    <button data-add-item='${JSON.stringify(item)}' class="h-7 px-2.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded transition-colors shadow-sm font-semibold">
-                      Add Rule
-                    </button>
-                  `}
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
+          <tbody id="cat-tbody" class="divide-y divide-zinc-800/60 text-xs"></tbody>
         </table>
       </div>
-      <div class="text-[11px] text-zinc-500 font-mono px-1">
-        Showing ${filtered.length} of ${state.catalog.length} total rulesets
-      </div>
+
+      <div id="cat-pagination" class="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-400 pt-1"></div>
     </div>
   `;
+}
+
+function updateCatalogTable() {
+  const tbody = document.getElementById('cat-tbody');
+  const pag = document.getElementById('cat-pagination');
+  if (!tbody) return;
+
+  if (state.catalogLoading && state.catalog.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="py-12 text-center text-zinc-500 font-mono">
+          <div class="w-5 h-5 border-2 border-zinc-400 border-t-transparent rounded-full spin mx-auto mb-2"></div>
+          Synchronizing catalog tree...
+        </td>
+      </tr>
+    `;
+    if (pag) pag.innerHTML = '';
+    return;
+  }
+
+  const filtered = getFilteredCatalog();
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+  if (state.page > totalPages) state.page = totalPages;
+  if (state.page < 1) state.page = 1;
+
+  if (total === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="py-12 text-center text-zinc-500">
+          No matching rulesets found in catalog.
+        </td>
+      </tr>
+    `;
+    if (pag) {
+      pag.innerHTML = `<div class="text-[11px] text-zinc-500 font-mono">0 of ${state.catalog.length} rulesets</div>`;
+    }
+    return;
+  }
+
+  const startIdx = (state.page - 1) * state.pageSize;
+  const endIdx = Math.min(startIdx + state.pageSize, total);
+  const pageItems = filtered.slice(startIdx, endIdx);
+
+  let rowsHtml = '';
+  for (let i = 0; i < pageItems.length; i++) {
+    const item = pageItems[i];
+    rowsHtml += `
+      <tr class="hover:bg-zinc-900/50 transition-colors ${item.applied ? 'bg-zinc-900/20' : ''}">
+        <td class="py-2.5 px-4 font-mono">
+          <div class="font-semibold text-zinc-200">${escapeHtml(item.name)}</div>
+          <div class="text-[11px] text-zinc-500 font-mono truncate max-w-sm">${escapeHtml(item.path)}</div>
+        </td>
+        <td class="py-2.5 px-4">
+          <span class="inline-flex items-center text-[10px] font-mono px-2 py-0.5 rounded border ${
+            item.category === 'geosite'
+              ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+              : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+          }">${escapeHtml(item.category)}</span>
+        </td>
+        <td class="py-2.5 px-4 font-mono text-zinc-400">${escapeHtml(item.behavior)}</td>
+        <td class="py-2.5 px-4 font-mono text-zinc-400">${formatBytes(item.size)}</td>
+        <td class="py-2.5 px-4">
+          ${item.applied ? `
+            <div class="flex items-center gap-1.5">
+              <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active
+              </span>
+              ${item.block_quic ? `
+                <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC</span>
+              ` : ''}
+            </div>
+          ` : `
+            <span class="text-zinc-500 text-[11px]">Available</span>
+          `}
+        </td>
+        <td class="py-2.5 px-4 text-right whitespace-nowrap">
+          ${item.applied ? `
+            <button data-edit-rule="${escapeHtml(item.applied_name || item.name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">
+              Edit
+            </button>
+            <button data-remove-name="${escapeHtml(item.applied_name || item.name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">
+              Remove
+            </button>
+          ` : `
+            <button data-add-path="${escapeHtml(item.path)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded transition-colors shadow-sm font-semibold">
+              Add Rule
+            </button>
+          `}
+        </td>
+      </tr>
+    `;
+  }
+  tbody.innerHTML = rowsHtml;
+
+  if (pag) {
+    pag.innerHTML = `
+      <div class="text-[11px] text-zinc-500 font-mono">
+        Showing <span class="text-zinc-300 font-semibold">${startIdx + 1}</span>–<span class="text-zinc-300 font-semibold">${endIdx}</span> of <span class="text-zinc-300 font-semibold">${total}</span> rulesets
+        ${state.catalog.length !== total ? `<span class="text-zinc-600">(filtered from ${state.catalog.length})</span>` : ''}
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-1.5">
+          <span class="text-[11px] text-zinc-500 font-mono">Per page:</span>
+          <select id="cat-pagesize-select" class="h-7 px-2 bg-zinc-900 border border-zinc-800 rounded text-[11px] text-zinc-200 font-mono focus:outline-none focus:border-zinc-500">
+            <option value="25" ${state.pageSize === 25 ? 'selected' : ''}>25</option>
+            <option value="50" ${state.pageSize === 50 ? 'selected' : ''}>50</option>
+            <option value="100" ${state.pageSize === 100 ? 'selected' : ''}>100</option>
+            <option value="200" ${state.pageSize === 200 ? 'selected' : ''}>200</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <button id="cat-page-first" ${state.page <= 1 ? 'disabled class="opacity-30 cursor-not-allowed h-7 px-2 text-xs font-medium rounded border border-zinc-800 bg-zinc-900 text-zinc-500"' : 'class="h-7 px-2 text-xs font-medium rounded border border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 transition-colors"'}>
+            «
+          </button>
+          <button id="cat-page-prev" ${state.page <= 1 ? 'disabled class="opacity-30 cursor-not-allowed h-7 px-2.5 text-xs font-medium rounded border border-zinc-800 bg-zinc-900 text-zinc-500"' : 'class="h-7 px-2.5 text-xs font-medium rounded border border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 transition-colors"'}>
+            ‹ Prev
+          </button>
+
+          <span class="px-2 text-[11px] font-mono text-zinc-400">
+            Page <span class="text-zinc-100 font-semibold">${state.page}</span> / <span class="text-zinc-400">${totalPages}</span>
+          </span>
+
+          <button id="cat-page-next" ${state.page >= totalPages ? 'disabled class="opacity-30 cursor-not-allowed h-7 px-2.5 text-xs font-medium rounded border border-zinc-800 bg-zinc-900 text-zinc-500"' : 'class="h-7 px-2.5 text-xs font-medium rounded border border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 transition-colors"'}>
+            Next ›
+          </button>
+          <button id="cat-page-last" ${state.page >= totalPages ? 'disabled class="opacity-30 cursor-not-allowed h-7 px-2 text-xs font-medium rounded border border-zinc-800 bg-zinc-900 text-zinc-500"' : 'class="h-7 px-2 text-xs font-medium rounded border border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 transition-colors"'}>
+            »
+          </button>
+        </div>
+      </div>
+    `;
+
+    const prevBtn = document.getElementById('cat-page-prev');
+    if (prevBtn && state.page > 1) {
+      prevBtn.onclick = () => { state.page--; updateCatalogTable(); };
+    }
+    const nextBtn = document.getElementById('cat-page-next');
+    if (nextBtn && state.page < totalPages) {
+      nextBtn.onclick = () => { state.page++; updateCatalogTable(); };
+    }
+    const firstBtn = document.getElementById('cat-page-first');
+    if (firstBtn && state.page > 1) {
+      firstBtn.onclick = () => { state.page = 1; updateCatalogTable(); };
+    }
+    const lastBtn = document.getElementById('cat-page-last');
+    if (lastBtn && state.page < totalPages) {
+      lastBtn.onclick = () => { state.page = totalPages; updateCatalogTable(); };
+    }
+    const sizeSelect = document.getElementById('cat-pagesize-select');
+    if (sizeSelect) {
+      sizeSelect.onchange = (e) => {
+        state.pageSize = parseInt(e.target.value, 10) || 50;
+        state.page = 1;
+        updateCatalogTable();
+      };
+    }
+  }
 }
 
 function bindCatalogEvents() {
   const searchInput = document.getElementById('cat-search');
   if (searchInput) {
+    let searchTimer;
     searchInput.addEventListener('input', (e) => {
-      state.searchQuery = e.target.value;
-      render();
-      const el = document.getElementById('cat-search');
-      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        state.searchQuery = e.target.value;
+        state.page = 1;
+        updateCatalogTable();
+      }, 70);
     });
   }
 
   document.querySelectorAll('[data-cat-filter]').forEach(btn => {
     btn.addEventListener('click', () => {
       state.categoryFilter = btn.dataset.catFilter;
-      render();
+      state.page = 1;
+      document.querySelectorAll('[data-cat-filter]').forEach(b => {
+        const active = b.dataset.catFilter === state.categoryFilter;
+        b.className = `h-8 px-2.5 text-xs font-medium rounded-md border transition-colors ${
+          active ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+        }`;
+      });
+      updateCatalogTable();
     });
   });
 
@@ -398,17 +550,29 @@ function bindCatalogEvents() {
     refBtn.addEventListener('click', () => fetchCatalog(true));
   }
 
-  document.querySelectorAll('[data-add-item]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      openAddRuleModal(JSON.parse(btn.dataset.addItem));
+  const tbody = document.getElementById('cat-tbody');
+  if (tbody) {
+    tbody.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('[data-edit-rule]');
+      if (editBtn) {
+        openEditRuleModal(editBtn.dataset.editRule);
+        return;
+      }
+      const addBtn = e.target.closest('[data-add-path]');
+      if (addBtn) {
+        const item = state.catalogMap[addBtn.dataset.addPath];
+        if (item) openAddRuleModal(item);
+        return;
+      }
+      const removeBtn = e.target.closest('[data-remove-name]');
+      if (removeBtn) {
+        confirmDeleteRule(removeBtn.dataset.removeName);
+        return;
+      }
     });
-  });
+  }
 
-  document.querySelectorAll('[data-remove]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      confirmDeleteRule(btn.dataset.remove);
-    });
-  });
+  updateCatalogTable();
 }
 
 function renderActiveRulesView() {
@@ -457,12 +621,18 @@ function renderActiveRulesView() {
               const prov = providersMap[name];
               const fileName = (name + '.mrs').toLowerCase();
               const diskFile = diskMap[fileName];
+              const isQuic = (state.local.quic_blocked || []).some(q => q.toLowerCase() === name.toLowerCase());
 
               return `
                 <tr class="hover:bg-zinc-900/50 transition-colors">
                   <td class="py-2.5 px-4 font-mono text-zinc-500">${idx + 1}</td>
                   <td class="py-2.5 px-4 font-mono">
-                    <span class="font-semibold text-zinc-100">${escapeHtml(name)}</span>
+                    <div class="flex items-center gap-2">
+                      <span class="font-semibold text-zinc-100">${escapeHtml(name)}</span>
+                      ${isQuic ? `
+                        <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC Blocked</span>
+                      ` : ''}
+                    </div>
                     ${prov && prov.url ? `<div class="text-[11px] text-zinc-500 truncate max-w-sm">${escapeHtml(prov.url)}</div>` : ''}
                   </td>
                   <td class="py-2.5 px-4">
@@ -486,7 +656,10 @@ function renderActiveRulesView() {
                       </span>
                     `}
                   </td>
-                  <td class="py-2.5 px-4 text-right">
+                  <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                    <button data-edit-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">
+                      Edit
+                    </button>
                     <button data-delete-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">
                       Delete
                     </button>
@@ -502,6 +675,12 @@ function renderActiveRulesView() {
 }
 
 function bindActiveEvents() {
+  document.querySelectorAll('[data-edit-rule]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openEditRuleModal(btn.dataset.editRule);
+    });
+  });
+
   document.querySelectorAll('[data-delete-rule]').forEach(btn => {
     btn.addEventListener('click', () => {
       confirmDeleteRule(btn.dataset.deleteRule);
@@ -627,6 +806,19 @@ function openAddRuleModal(preset = null) {
             ${groups.map(g => `<option value="${escapeHtml(g)}" ${g === defaultGroup ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
           </select>
         </div>
+
+        <label class="flex items-start gap-2.5 p-3 rounded-md bg-zinc-900/60 border border-zinc-800 cursor-pointer hover:border-zinc-700 transition-colors">
+          <input id="modal-quic" type="checkbox" class="mt-0.5 rounded bg-zinc-950 border-zinc-700">
+          <div>
+            <div class="font-semibold text-zinc-200 text-xs flex items-center gap-1.5">
+              Block QUIC traffic
+              <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">UDP 443 → REJECT</span>
+            </div>
+            <p class="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+              Forces clients (YouTube, Google) to fallback from HTTP/3 to HTTPS (TCP), preventing ISP UDP throttling and timeouts.
+            </p>
+          </div>
+        </label>
       </div>
 
       <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
@@ -655,6 +847,7 @@ function openAddRuleModal(preset = null) {
     const behavior = document.getElementById('modal-behavior').value;
     const format = document.getElementById('modal-format').value;
     const proxyGroup = document.getElementById('modal-group').value;
+    const blockQuic = document.getElementById('modal-quic').checked;
 
     if (!name || !url || !proxyGroup) {
       showToast('Please fill all fields', 'error');
@@ -671,7 +864,8 @@ function openAddRuleModal(preset = null) {
         url: url,
         behavior: behavior,
         format: format,
-        proxy_group: proxyGroup
+        proxy_group: proxyGroup,
+        block_quic: blockQuic
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
@@ -688,6 +882,142 @@ function openAddRuleModal(preset = null) {
   };
 
   document.getElementById('modal-name').focus();
+}
+
+function openEditRuleModal(name) {
+  if (!state.local) return;
+  const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+
+  let currentGroup = groups[0];
+  (state.local.rules || []).forEach(r => {
+    const parts = r.split(',').map(s => s.trim());
+    if (parts.length >= 3 && parts[0].toUpperCase() === 'RULE-SET' && parts[1].toLowerCase() === name.toLowerCase()) {
+      currentGroup = parts[2];
+    }
+  });
+
+  const prov = (state.local.rule_providers || []).find(p => p.name.toLowerCase() === name.toLowerCase());
+  const isQuic = (state.local.quic_blocked || []).some(q => q.toLowerCase() === name.toLowerCase());
+
+  const currentUrl = prov ? prov.url : '';
+  const currentBehavior = prov ? prov.behavior : 'domain';
+  const currentFormat = prov ? prov.format : 'mrs';
+
+  const modal = document.getElementById('modal-container');
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-lg w-full space-y-5 shadow-2xl relative" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div>
+          <h3 class="font-semibold text-sm text-zinc-100">Edit Ruleset Directive</h3>
+          <p class="text-xs text-zinc-500 font-mono mt-0.5">${escapeHtml(name)}</p>
+        </div>
+        <button id="modal-edit-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <div>
+          <label class="block text-zinc-300 mb-1 font-medium">Target Proxy Group</label>
+          <select id="modal-edit-group" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-medium focus:border-zinc-500 focus:outline-none">
+            ${groups.map(g => `<option value="${escapeHtml(g)}" ${g === currentGroup ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
+          </select>
+        </div>
+
+        <label class="flex items-start gap-2.5 p-3 rounded-md bg-zinc-900/60 border border-zinc-800 cursor-pointer hover:border-zinc-700 transition-colors">
+          <input id="modal-edit-quic" type="checkbox" ${isQuic ? 'checked' : ''} class="mt-0.5 rounded bg-zinc-950 border-zinc-700">
+          <div>
+            <div class="font-semibold text-zinc-200 text-xs flex items-center gap-1.5">
+              Block QUIC traffic
+              <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20 font-medium">UDP 443 → REJECT</span>
+            </div>
+            <p class="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+              Forces clients (YouTube, Google) to fallback from HTTP/3 to HTTPS (TCP), preventing ISP UDP throttling and timeouts.
+            </p>
+          </div>
+        </label>
+
+        ${prov ? `
+          <div class="pt-2 border-t border-zinc-800/80 space-y-3">
+            <div class="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">Provider Settings</div>
+            <div>
+              <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Download URL (.mrs)</label>
+              <input id="modal-edit-url" type="text" value="${escapeHtml(currentUrl)}" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-200 font-mono focus:border-zinc-500 focus:outline-none">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Behavior</label>
+                <select id="modal-edit-behavior" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-200 focus:border-zinc-500 focus:outline-none">
+                  <option value="domain" ${currentBehavior === 'domain' ? 'selected' : ''}>domain</option>
+                  <option value="ipcidr" ${currentBehavior === 'ipcidr' ? 'selected' : ''}>ipcidr</option>
+                  <option value="classical" ${currentBehavior === 'classical' ? 'selected' : ''}>classical</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Format</label>
+                <select id="modal-edit-format" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-200 focus:border-zinc-500 focus:outline-none">
+                  <option value="mrs" ${currentFormat === 'mrs' ? 'selected' : ''}>mrs (binary)</option>
+                  <option value="yaml" ${currentFormat === 'yaml' ? 'selected' : ''}>yaml</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+        <button id="modal-edit-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
+        <button id="modal-edit-save" class="h-8 px-3 rounded-md text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 transition-colors">Save & Reload</button>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+
+  document.getElementById('modal-edit-close').onclick = closeModal;
+  document.getElementById('modal-edit-cancel').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  document.getElementById('modal-edit-save').onclick = async () => {
+    const proxyGroup = document.getElementById('modal-edit-group').value;
+    const blockQuic = document.getElementById('modal-edit-quic').checked;
+    const urlInput = document.getElementById('modal-edit-url');
+    const behaviorSelect = document.getElementById('modal-edit-behavior');
+    const formatSelect = document.getElementById('modal-edit-format');
+
+    const saveBtn = document.getElementById('modal-edit-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+      const payload = {
+        name: name,
+        proxy_group: proxyGroup,
+        block_quic: blockQuic,
+      };
+      if (urlInput) payload.url = urlInput.value.trim();
+      if (behaviorSelect) payload.behavior = behaviorSelect.value;
+      if (formatSelect) payload.format = formatSelect.value;
+
+      const res = await API.editRule(payload);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update rule');
+
+      showToast(`Rule ${name} updated successfully`, 'success');
+      closeModal();
+      await fetchLocal();
+      await fetchCatalog(false);
+    } catch (err) {
+      showToast(err.message, 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save & Reload';
+    }
+  };
 }
 
 function confirmDeleteRule(name) {

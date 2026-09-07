@@ -83,7 +83,18 @@ func (c *Catalog) BaseURL() string {
 }
 
 func (c *Catalog) fetchTree() ([]GitHubFile, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/git/trees/%s?recursive=1", c.repo, c.ref)
+	repo := c.repo
+	ref := c.ref
+
+	treeRef := ref
+	pathPrefix := ""
+
+	if repo == "MetaCubeX/meta-rules-dat" && !strings.Contains(ref, ":") {
+		treeRef = ref + ":geo"
+		pathPrefix = "geo/"
+	}
+
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/git/trees/%s?recursive=1", repo, treeRef)
 	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create tree request: %w", err)
@@ -100,6 +111,23 @@ func (c *Catalog) fetchTree() ([]GitHubFile, error) {
 		return nil, fmt.Errorf("github api request failed: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound && pathPrefix != "" {
+		treeRef = ref
+		pathPrefix = ""
+		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/git/trees/%s?recursive=1", repo, treeRef)
+		req, _ = http.NewRequest(http.MethodGet, apiURL, nil)
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "miru-openwrt-mihomo-manager")
+		if c.token != "" {
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
+		resp, err = c.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("github api request failed: %w", err)
+		}
+		defer resp.Body.Close()
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -131,7 +159,13 @@ func (c *Catalog) fetchTree() ([]GitHubFile, error) {
 
 	for _, item := range tree.Tree {
 		if item.Type == "blob" && strings.HasSuffix(item.Path, ".mrs") {
-			lowerPath := strings.ToLower(item.Path)
+			fullPath := pathPrefix + item.Path
+			lowerPath := strings.ToLower(fullPath)
+
+			if strings.HasPrefix(lowerPath, "asn/") || strings.Contains(lowerPath, "/asn/") {
+				continue
+			}
+
 			category := "ruleset"
 			behavior := "domain"
 
@@ -148,11 +182,11 @@ func (c *Catalog) fetchTree() ([]GitHubFile, error) {
 
 			files = append(files, GitHubFile{
 				Name:     name,
-				Path:     item.Path,
+				Path:     fullPath,
 				Category: category,
 				Behavior: behavior,
 				Size:     item.Size,
-				URL:      rawBase + item.Path,
+				URL:      rawBase + fullPath,
 			})
 		}
 	}

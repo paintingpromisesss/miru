@@ -110,6 +110,31 @@ func TestAPI_LocalAndRules(t *testing.T) {
 		t.Errorf("Expected youtube rule-provider in config: %s", cfgStr)
 	}
 
+	// Test PUT /api/rules to edit rule and enable BlockQUIC
+	editPayload := EditRuleRequest{
+		Name:       "youtube",
+		ProxyGroup: "STABLE",
+		BlockQUIC:  true,
+	}
+	editBody, _ := json.Marshal(editPayload)
+	req = httptest.NewRequest(http.MethodPut, "/api/rules", bytes.NewReader(editBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT /api/rules failed with %d: %s", rec.Code, rec.Body.String())
+	}
+
+	cfgBytesEdited, _ := os.ReadFile(cfgPath)
+	cfgStrEdited := string(cfgBytesEdited)
+	if !strings.Contains(cfgStrEdited, "RULE-SET,youtube,STABLE") {
+		t.Errorf("Expected updated RULE-SET,youtube,STABLE in config: %s", cfgStrEdited)
+	}
+	if !strings.Contains(cfgStrEdited, "AND,((RULE-SET,youtube),(NETWORK,udp),(DST-PORT,443)),REJECT") {
+		t.Errorf("Expected QUIC block rule in config: %s", cfgStrEdited)
+	}
+
 	dummyFile := filepath.Join(rulesDir, "youtube.mrs")
 	_ = os.WriteFile(dummyFile, []byte("dummy-mrs-data"), 0644)
 
