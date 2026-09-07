@@ -189,4 +189,25 @@ func TestYAMLEditor(t *testing.T) {
 	if editor.HasQuicRule("youtube") {
 		t.Errorf("expected QUIC rule for youtube to be removed with RemoveRule")
 	}
+
+	// Test Global QUIC rule
+	if editor.HasGlobalQuicRule() {
+		t.Errorf("expected no global QUIC rule initially")
+	}
+	if err := editor.SetGlobalQuicRule(true); err != nil {
+		t.Fatalf("SetGlobalQuicRule true failed: %v", err)
+	}
+	if !editor.HasGlobalQuicRule() {
+		t.Errorf("expected global QUIC rule after SetGlobalQuicRule true")
+	}
+	rulesAfterGlobal := editor.GetRules()
+	if len(rulesAfterGlobal) == 0 || !strings.Contains(rulesAfterGlobal[0], "AND,((NETWORK,udp),(DST-PORT,443)),REJECT") {
+		t.Errorf("expected global QUIC rule at index 0, got: %v", rulesAfterGlobal)
+	}
+	if err := editor.SetGlobalQuicRule(false); err != nil {
+		t.Fatalf("SetGlobalQuicRule false failed: %v", err)
+	}
+	if editor.HasGlobalQuicRule() {
+		t.Errorf("expected no global QUIC rule after SetGlobalQuicRule false")
+	}
 }

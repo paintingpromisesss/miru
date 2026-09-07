@@ -102,6 +102,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/local", s.handleLocal)
 	mux.HandleFunc("/api/catalog", s.handleCatalog)
 	mux.HandleFunc("/api/rules", s.handleRules)
+	mux.HandleFunc("/api/quic/global", s.handleGlobalQuic)
 	mux.HandleFunc("/api/reload", s.handleReload)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

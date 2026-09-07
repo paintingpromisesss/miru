@@ -123,14 +123,15 @@ func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]interface{}{
-		"rule_providers":    providers,
-		"rules":             rules,
-		"proxy_groups":      groups,
-		"applied_rule_sets": activeSetNames,
-		"quic_blocked":      quicBlocked,
-		"rules_dir":         s.rulesDir,
-		"disk_files":        diskFiles,
-		"config_path":       s.configPath,
+		"rule_providers":      providers,
+		"rules":               rules,
+		"proxy_groups":        groups,
+		"applied_rule_sets":   activeSetNames,
+		"quic_blocked":        quicBlocked,
+		"global_quic_blocked": s.editor.HasGlobalQuicRule(),
+		"rules_dir":           s.rulesDir,
+		"disk_files":          diskFiles,
+		"config_path":         s.configPath,
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -417,5 +418,48 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Status:  "ok",
 		Message: "Mihomo configuration reloaded successfully",
+	})
+}
+
+func (s *Server) handleGlobalQuic(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"global_quic_blocked": s.editor.HasGlobalQuicRule(),
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		writeError(w, http.StatusMethodNotAllowed, "Only GET, POST or PUT allowed on /api/quic/global")
+		return
+	}
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+	if err := s.editor.SetGlobalQuicRule(req.Enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update global QUIC rule: %v", err))
+		return
+	}
+
+	if err := s.editor.Save(); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save config: %v", err))
+		return
+	}
+
+	go func() {
+		if err := s.ReloadMihomo(); err != nil {
+			log.Printf("[Mihomo] Reload error after global QUIC toggle: %v", err)
+		}
+	}()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":              "ok",
+		"global_quic_blocked": req.Enabled,
 	})
 }

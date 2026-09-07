@@ -154,6 +154,38 @@ func TestAPI_LocalAndRules(t *testing.T) {
 	if _, err := os.Stat(dummyFile); !os.IsNotExist(err) {
 		t.Errorf("Dummy .mrs file was not deleted from disk")
 	}
+
+	// Test Global QUIC API endpoint
+	quicBody, _ := json.Marshal(map[string]bool{"enabled": true})
+	req = httptest.NewRequest(http.MethodPost, "/api/quic/global", bytes.NewReader(quicBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/quic/global failed with %d: %s", rec.Code, rec.Body.String())
+	}
+
+	cfgBytesQuic, _ := os.ReadFile(cfgPath)
+	if !strings.Contains(string(cfgBytesQuic), "AND,((NETWORK,udp),(DST-PORT,443)),REJECT") {
+		t.Errorf("Expected global QUIC rule in config: %s", string(cfgBytesQuic))
+	}
+
+	// Disable global QUIC
+	quicOffBody, _ := json.Marshal(map[string]bool{"enabled": false})
+	req = httptest.NewRequest(http.MethodPost, "/api/quic/global", bytes.NewReader(quicOffBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/quic/global (off) failed with %d: %s", rec.Code, rec.Body.String())
+	}
+
+	cfgBytesQuicOff, _ := os.ReadFile(cfgPath)
+	if strings.Contains(string(cfgBytesQuicOff), "AND,((NETWORK,udp),(DST-PORT,443)),REJECT") {
+		t.Errorf("Expected global QUIC rule removed from config: %s", string(cfgBytesQuicOff))
+	}
 }
 
 func TestWebUIEmbedded(t *testing.T) {

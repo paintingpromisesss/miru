@@ -548,6 +548,64 @@ func (e *YAMLEditor) SetQuicRule(ruleSet string, enable bool) error {
 	return nil
 }
 
+func isGlobalQuicRule(ruleStr string) bool {
+	r := strings.ToLower(ruleStr)
+	return strings.Contains(r, "and,") &&
+		!strings.Contains(r, "rule-set") &&
+		strings.Contains(r, "443") &&
+		strings.Contains(r, "udp") &&
+		strings.Contains(r, "reject")
+}
+
+func (e *YAMLEditor) HasGlobalQuicRule() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	section := e.readSection("rules")
+	if section == nil || section.Kind != yaml.SequenceNode {
+		return false
+	}
+	for _, n := range section.Content {
+		if n.Kind == yaml.ScalarNode && isGlobalQuicRule(n.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *YAMLEditor) SetGlobalQuicRule(enable bool) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	section := e.ensureSection("rules", yaml.SequenceNode, "!!seq")
+	if section.Kind != yaml.SequenceNode {
+		section.Kind = yaml.SequenceNode
+		section.Tag = "!!seq"
+	}
+
+	var filtered []*yaml.Node
+	for _, n := range section.Content {
+		if n.Kind == yaml.ScalarNode && isGlobalQuicRule(n.Value) {
+			continue
+		}
+		filtered = append(filtered, n)
+	}
+
+	if !enable {
+		section.Content = filtered
+		return nil
+	}
+
+	quicNode := &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!str",
+		Value: "AND,((NETWORK,udp),(DST-PORT,443)),REJECT",
+	}
+
+	section.Content = append([]*yaml.Node{quicNode}, filtered...)
+	return nil
+}
+
 func (e *YAMLEditor) UpdateRuleProvider(name, url, behavior, format string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()

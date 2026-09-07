@@ -67,6 +67,11 @@ tailwind.config = {
     </div>
 
     <div class="flex items-center gap-2">
+      <button id="btn-toggle-quic" title="Toggle global UDP port 443 block for all traffic" class="h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded-md transition-all flex items-center gap-2 shadow-sm">
+        <span id="global-quic-indicator" class="w-2 h-2 rounded-full bg-zinc-600 transition-colors"></span>
+        <span id="global-quic-text">Block All QUIC</span>
+      </button>
+
       <button id="btn-custom-rule" class="h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded-md transition-colors flex items-center gap-1.5 shadow-sm">
         <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         Custom MRS
@@ -148,6 +153,11 @@ const API = {
   deleteRule: (name, deleteFile = true) => fetch(`/api/rules?name=${encodeURIComponent(name)}&delete_file=${deleteFile}`, {
     method: 'DELETE'
   }),
+  toggleGlobalQuic: (enabled) => fetch('/api/quic/global', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ enabled })
+  }).then(r => r.json()),
   reloadMihomo: () => fetch('/api/reload', { method: 'POST' }).then(r => r.json())
 };
 
@@ -269,6 +279,24 @@ async function fetchCatalog(refresh = false) {
   }
 }
 
+function updateGlobalQuicUI() {
+  const isBlocked = state.local && !!state.local.global_quic_blocked;
+  const btn = document.getElementById('btn-toggle-quic');
+  const dot = document.getElementById('global-quic-indicator');
+  const txt = document.getElementById('global-quic-text');
+  if (!btn || !dot || !txt) return;
+
+  if (isBlocked) {
+    dot.className = 'w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]';
+    btn.className = 'h-8 px-3 text-xs font-medium border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 rounded-md transition-all flex items-center gap-2 shadow-sm';
+    txt.textContent = 'Block All QUIC: ON';
+  } else {
+    dot.className = 'w-2 h-2 rounded-full bg-zinc-600';
+    btn.className = 'h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded-md transition-all flex items-center gap-2 shadow-sm';
+    txt.textContent = 'Block All QUIC: OFF';
+  }
+}
+
 function updateStats() {
   if (!state.local) return;
   const activeCount = (state.local.rules || []).filter(r => r.trim().startsWith('RULE-SET,')).length;
@@ -280,6 +308,7 @@ function updateStats() {
   if (state.local.config_path) {
     document.getElementById('stat-config').textContent = state.local.config_path;
   }
+  updateGlobalQuicUI();
 }
 
 function render() {
@@ -1098,6 +1127,26 @@ document.getElementById('btn-reload-mihomo').addEventListener('click', async () 
     showToast('Failed to reach Mihomo API: ' + err.message, 'error');
   } finally {
     icon.classList.remove('spin');
+  }
+});
+
+document.getElementById('btn-toggle-quic').addEventListener('click', async () => {
+  const current = state.local && !!state.local.global_quic_blocked;
+  const next = !current;
+  const btn = document.getElementById('btn-toggle-quic');
+  btn.disabled = true;
+  try {
+    const res = await API.toggleGlobalQuic(next);
+    if (res.status === 'ok') {
+      showToast(next ? 'Global QUIC blocked (all UDP 443 rejected)' : 'Global QUIC block disabled', next ? 'warning' : 'info');
+      await fetchLocal();
+    } else {
+      showToast(res.error || 'Failed to toggle global QUIC', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to toggle QUIC: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
   }
 });
 
