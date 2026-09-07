@@ -11,7 +11,8 @@ ExecStart=/usr/bin/miru \
     -port ${MIRU_PORT:-8080} \
     -mihomo-api ${MIRU_MIHOMO_API:-http://127.0.0.1:9090} \
     -mihomo-secret ${MIRU_MIHOMO_SECRET:-} \
-    -github-token ${MIRU_GITHUB_TOKEN:-}
+    -github-token ${MIRU_GITHUB_TOKEN:-} \
+    -github-proxy ${MIRU_GITHUB_PROXY:-auto}
 Restart=always
 RestartSec=5
 LimitNOFILE=65535

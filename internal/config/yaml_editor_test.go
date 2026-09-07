@@ -55,6 +55,10 @@ func TestYAMLEditor(t *testing.T) {
 		t.Errorf("Expected secret 'router12345', got %q", secret)
 	}
 
+	if proxy := editor.GetInboundProxy(); proxy != "http://127.0.0.1:7890" {
+		t.Errorf("Expected inbound proxy 'http://127.0.0.1:7890', got %q", proxy)
+	}
+
 	groups := editor.GetProxyGroups()
 	foundUnblock := false
 	for _, g := range groups {

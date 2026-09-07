@@ -47,7 +47,7 @@ func setupTestServer(t *testing.T) (*Server, *http.ServeMux, string, string) {
 		t.Fatalf("NewYAMLEditor: %v", err)
 	}
 
-	cat := catalog.NewCatalog("MetaCubeX/meta-rules-dat", "meta", "", 1*time.Hour)
+	cat := catalog.NewCatalog("MetaCubeX/meta-rules-dat", "meta", "", 1*time.Hour, "")
 
 	srv := New(Config{
 		Editor:     editor,

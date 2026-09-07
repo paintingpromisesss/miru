@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"miru/internal/catalog"
@@ -23,6 +24,7 @@ var (
 	catalogRepo  = flag.String("catalog-repo", "MetaCubeX/meta-rules-dat", "GitHub repo with .mrs files (owner/name)")
 	catalogRef   = flag.String("catalog-ref", "meta", "Git ref/branch for catalog")
 	refreshTTL   = flag.Duration("catalog-ttl", 12*time.Hour, "Catalog cache TTL in memory (default 12h)")
+	githubProxy  = flag.String("github-proxy", "auto", "Proxy URL for GitHub requests ('auto' to read mixed-port/port from config, 'none' to disable)")
 
 	AppVersion = "dev"
 )
@@ -43,7 +45,21 @@ func main() {
 		log.Fatalf("Failed to open or parse config file %s: %v", *configPath, err)
 	}
 
-	cat := catalog.NewCatalog(*catalogRepo, *catalogRef, *githubToken, *refreshTTL)
+	resolvedProxy := ""
+	switch strings.ToLower(*githubProxy) {
+	case "none", "off", "direct":
+		resolvedProxy = ""
+	case "auto", "":
+		resolvedProxy = editor.GetInboundProxy()
+	default:
+		resolvedProxy = *githubProxy
+	}
+
+	if resolvedProxy != "" {
+		log.Printf("[Catalog] Routing GitHub requests through proxy: %s", resolvedProxy)
+	}
+
+	cat := catalog.NewCatalog(*catalogRepo, *catalogRef, *githubToken, *refreshTTL, resolvedProxy)
 
 	srv := server.New(server.Config{
 		Editor:       editor,

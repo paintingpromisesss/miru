@@ -114,6 +114,7 @@ configure_settings() {
     DEF_API="http://127.0.0.1:9090"
     DEF_SECRET=""
     DEF_GITHUB_TOKEN=""
+    DEF_GITHUB_PROXY="auto"
 
     if [ -f "$CONFIG_FILE" ]; then
         info "Found existing configuration in $CONFIG_FILE"
@@ -124,6 +125,7 @@ configure_settings() {
         DEF_API="${MIRU_MIHOMO_API:-$DEF_API}"
         DEF_SECRET="${MIRU_MIHOMO_SECRET:-$DEF_SECRET}"
         DEF_GITHUB_TOKEN="${MIRU_GITHUB_TOKEN:-$DEF_GITHUB_TOKEN}"
+        DEF_GITHUB_PROXY="${MIRU_GITHUB_PROXY:-$DEF_GITHUB_PROXY}"
     fi
 
     if [ -t 0 ] || [ -e /dev/tty ]; then
@@ -158,6 +160,7 @@ MIRU_PORT=${DEF_PORT}
 MIRU_MIHOMO_API=${DEF_API}
 MIRU_MIHOMO_SECRET=${DEF_SECRET}
 MIRU_GITHUB_TOKEN=${DEF_GITHUB_TOKEN}
+MIRU_GITHUB_PROXY=${DEF_GITHUB_PROXY}
 EOF
 
     chmod 600 "$CONFIG_FILE"

@@ -152,6 +152,34 @@ func (e *YAMLEditor) GetSecret() string {
 	return ""
 }
 
+func (e *YAMLEditor) GetInboundProxy() string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if node := e.readSection("mixed-port"); node != nil && node.Kind == yaml.ScalarNode {
+		val := strings.TrimSpace(node.Value)
+		if val != "" && val != "0" {
+			return fmt.Sprintf("http://127.0.0.1:%s", val)
+		}
+	}
+
+	if node := e.readSection("port"); node != nil && node.Kind == yaml.ScalarNode {
+		val := strings.TrimSpace(node.Value)
+		if val != "" && val != "0" {
+			return fmt.Sprintf("http://127.0.0.1:%s", val)
+		}
+	}
+
+	if node := e.readSection("socks-port"); node != nil && node.Kind == yaml.ScalarNode {
+		val := strings.TrimSpace(node.Value)
+		if val != "" && val != "0" {
+			return fmt.Sprintf("socks5://127.0.0.1:%s", val)
+		}
+	}
+
+	return ""
+}
+
 // In Mihomo, proxy-groups is a sequence of mappings: [{name: "group1", ...}, ...]
 func (e *YAMLEditor) GetProxyGroups() []string {
 	e.mu.RLock()

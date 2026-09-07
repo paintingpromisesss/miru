@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/paintingpromisesss/miru?style=flat-square)](https://github.com/paintingpromisesss/miru/releases)
 [![License](https://img.shields.io/github/license/paintingpromisesss/miru?style=flat-square)](LICENSE)
 
-[Features](#features) • [Installation](#installation) • [Architecture](#architecture) • [CLI Flags](#configuration--cli-flags) • [API](#api-endpoints) • [Building](#building-from-source)
+[Features](#features) • [Installation](#installation) • [CLI Flags](#configuration--cli-flags) • [API](#api-endpoints) • [Building](#building-from-source)
 
 </div>
 
@@ -17,22 +17,6 @@
 **Miru** is a self-contained, ultra-lightweight rule manager designed for the **Mihomo** (Clash.Meta) core running on resource-constrained embedded Linux systems and OpenWrt routers.
 
 It provides a modern, fast Web UI embedded directly into a single static Go binary without third-party web frameworks, heavy runtimes, or external build steps.
-
-```
-       Browser (Web UI)
-              │
-              │  HTTP (REST API & Embedded Vanilla UI)
-              ▼
-        ┌───────────┐
-        │   Miru    │ ◄─── GitHub Trees API (Cached MRS Catalog)
-        └─────┬─────┘
-              │
-      Safe AST Editing (yaml.Node)
-              │
-              ▼
-   /etc/mihomo/config.yaml  ───► HTTP PUT /configs?force=true ───► Mihomo Core
-   (Comments Preserved)                                             (Hot Reload)
-```
 
 ---
 
@@ -150,6 +134,7 @@ Open your browser at `http://192.168.1.1:8080` to access the Web UI.
 | `-mihomo-api` | `http://127.0.0.1:9090` | Mihomo external controller base URL |
 | `-mihomo-secret` | `""` (auto-read) | Mihomo API secret token (automatically read from config if omitted) |
 | `-github-token` | `""` | Optional GitHub Personal Access Token to avoid rate limits |
+| `-github-proxy` | `auto` | Proxy URL for GitHub requests (`auto` reads `mixed-port`/`port` from config, `none` to disable) |
 | `-catalog-repo` | `MetaCubeX/meta-rules-dat` | GitHub repository containing `.mrs` rulesets |
 | `-catalog-ref` | `meta` | Git branch or tag in the catalog repository |
 | `-catalog-ttl` | `12h0m0s` | Duration to cache the remote ruleset tree in memory |
