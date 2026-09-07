@@ -45,6 +45,38 @@ type TreeItem struct {
 	Size int    `json:"size"`
 }
 
+var fallbackCuratedRules = []struct {
+	name     string
+	relPath  string
+	category string
+	behavior string
+	size     int
+}{
+	{"youtube", "geo/geosite/youtube.mrs", "geosite", "domain", 41200},
+	{"telegram", "geo/geosite/telegram.mrs", "geosite", "domain", 18400},
+	{"discord", "geo/geosite/discord.mrs", "geosite", "domain", 8300},
+	{"twitter", "geo/geosite/twitter.mrs", "geosite", "domain", 16500},
+	{"google", "geo/geosite/google.mrs", "geosite", "domain", 78000},
+	{"openai", "geo/geosite/openai.mrs", "geosite", "domain", 9200},
+	{"netflix", "geo/geosite/netflix.mrs", "geosite", "domain", 12100},
+	{"spotify", "geo/geosite/spotify.mrs", "geosite", "domain", 7800},
+	{"github", "geo/geosite/github.mrs", "geosite", "domain", 15400},
+	{"steam", "geo/geosite/steam.mrs", "geosite", "domain", 22000},
+	{"instagram", "geo/geosite/instagram.mrs", "geosite", "domain", 11000},
+	{"facebook", "geo/geosite/facebook.mrs", "geosite", "domain", 34000},
+	{"cloudflare", "geo/geosite/cloudflare.mrs", "geosite", "domain", 28000},
+	{"apple", "geo/geosite/apple.mrs", "geosite", "domain", 65000},
+	{"microsoft", "geo/geosite/microsoft.mrs", "geosite", "domain", 98000},
+	{"cn", "geo/geosite/cn.mrs", "geosite", "domain", 480000},
+	{"geolocation-!cn", "geo/geosite/geolocation-!cn.mrs", "geosite", "domain", 920000},
+	{"telegram", "geo/geoip/telegram.mrs", "geoip", "ipcidr", 4500},
+	{"google", "geo/geoip/google.mrs", "geoip", "ipcidr", 12000},
+	{"netflix", "geo/geoip/netflix.mrs", "geoip", "ipcidr", 6200},
+	{"twitter", "geo/geoip/twitter.mrs", "geoip", "ipcidr", 3800},
+	{"cloudflare", "geo/geoip/cloudflare.mrs", "geoip", "ipcidr", 8900},
+	{"cn", "geo/geoip/cn.mrs", "geoip", "ipcidr", 185000},
+}
+
 func NewCatalog(repo, ref, token string, ttl time.Duration) *Catalog {
 	if ttl <= 0 {
 		ttl = 12 * time.Hour
@@ -60,6 +92,22 @@ func NewCatalog(repo, ref, token string, ttl time.Duration) *Catalog {
 
 func (c *Catalog) BaseURL() string {
 	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/", c.repo, c.ref)
+}
+
+func (c *Catalog) getCuratedFallback() []GitHubFile {
+	base := c.BaseURL()
+	res := make([]GitHubFile, len(fallbackCuratedRules))
+	for i, r := range fallbackCuratedRules {
+		res[i] = GitHubFile{
+			Name:     r.name,
+			Path:     r.relPath,
+			Category: r.category,
+			Behavior: r.behavior,
+			Size:     r.size,
+			URL:      base + r.relPath,
+		}
+	}
+	return res
 }
 
 func (c *Catalog) fetchTree() ([]GitHubFile, error) {
@@ -147,11 +195,14 @@ func (c *Catalog) Refresh() error {
 
 	if err != nil {
 		c.lastErr = err
-		if len(c.files) > 0 {
-			c.lastStatus = fmt.Sprintf("Cached %d rules (refresh failed: %v)", len(c.files), err)
+		if len(c.files) == 0 {
+			c.files = c.getCuratedFallback()
+			c.loadedAt = time.Now()
+			c.lastStatus = fmt.Sprintf("Using %d curated rules (GitHub offline: %v)", len(c.files), err)
 			return nil
 		}
-		return err
+		c.lastStatus = fmt.Sprintf("Cached %d rules (refresh failed: %v)", len(c.files), err)
+		return nil
 	}
 
 	c.files = files
@@ -181,7 +232,13 @@ func (c *Catalog) List() ([]GitHubFile, error) {
 			return res, nil
 		}
 		c.mu.RUnlock()
-		return nil, err
+
+		fallback := c.getCuratedFallback()
+		c.mu.Lock()
+		c.files = fallback
+		c.loadedAt = time.Now()
+		c.mu.Unlock()
+		return fallback, nil
 	}
 
 	c.mu.RLock()
