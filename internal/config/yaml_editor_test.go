@@ -211,3 +211,165 @@ func TestYAMLEditor(t *testing.T) {
 		t.Errorf("expected no global QUIC rule after SetGlobalQuicRule false")
 	}
 }
+
+func TestProxyGroupsAndProvidersAndRawRules(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+
+	if err := os.WriteFile(cfgPath, []byte(sampleConfig), 0644); err != nil {
+		t.Fatalf("Failed to write temp config: %v", err)
+	}
+
+	editor, err := NewYAMLEditor(cfgPath)
+	if err != nil {
+		t.Fatalf("NewYAMLEditor failed: %v", err)
+	}
+
+	// 1. Test Proxy Groups CRUD
+	groups := editor.GetProxyGroupEntries()
+	if len(groups) != 2 {
+		t.Fatalf("Expected 2 proxy groups, got %d", len(groups))
+	}
+
+	err = editor.AddProxyGroup(ProxyGroupEntry{
+		Name:      "AUTO-FALLBACK",
+		Type:      "fallback",
+		Proxies:   []string{"DIRECT", "REJECT"},
+		URL:       "https://cp.cloudflare.com/generate_204",
+		Interval:  300,
+		Tolerance: 50,
+	})
+	if err != nil {
+		t.Fatalf("AddProxyGroup failed: %v", err)
+	}
+
+	groupsAfterAdd := editor.GetProxyGroupEntries()
+	if len(groupsAfterAdd) != 3 {
+		t.Fatalf("Expected 3 proxy groups after add, got %d", len(groupsAfterAdd))
+	}
+
+	err = editor.UpdateProxyGroup("AUTO-FALLBACK", ProxyGroupEntry{
+		Name:     "AUTO-FALLBACK",
+		Type:     "url-test",
+		Proxies:  []string{"DIRECT"},
+		URL:      "https://cp.cloudflare.com/generate_204",
+		Interval: 600,
+	})
+	if err != nil {
+		t.Fatalf("UpdateProxyGroup failed: %v", err)
+	}
+
+	groupsAfterUpdate := editor.GetProxyGroupEntries()
+	foundUpdated := false
+	for _, g := range groupsAfterUpdate {
+		if g.Name == "AUTO-FALLBACK" && g.Type == "url-test" && g.Interval == 600 {
+			foundUpdated = true
+			break
+		}
+	}
+	if !foundUpdated {
+		t.Fatalf("Failed to verify updated proxy group")
+	}
+
+	err = editor.DeleteProxyGroup("AUTO-FALLBACK")
+	if err != nil {
+		t.Fatalf("DeleteProxyGroup failed: %v", err)
+	}
+	if len(editor.GetProxyGroupEntries()) != 2 {
+		t.Fatalf("Expected 2 proxy groups after delete")
+	}
+
+	// 2. Test Proxy Providers CRUD
+	providers := editor.GetProxyProviders()
+	if len(providers) != 0 {
+		t.Fatalf("Expected 0 proxy providers initially")
+	}
+
+	err = editor.AddProxyProvider(ProxyProviderEntry{
+		Name:     "sub1",
+		Type:     "http",
+		URL:      "https://example.com/sub.yaml",
+		Path:     "./proxy_providers/sub1.yaml",
+		Interval: 3600,
+		HealthCheck: &HealthCheckConfig{
+			Enable:   true,
+			URL:      "http://cp.cloudflare.com/generate_204",
+			Interval: 300,
+		},
+	})
+	if err != nil {
+		t.Fatalf("AddProxyProvider failed: %v", err)
+	}
+
+	providers = editor.GetProxyProviders()
+	if len(providers) != 1 || providers[0].Name != "sub1" {
+		t.Fatalf("Expected 1 provider 'sub1', got %v", providers)
+	}
+
+	err = editor.UpdateProxyProvider("sub1", ProxyProviderEntry{
+		Name:     "sub1",
+		Type:     "http",
+		URL:      "https://example.com/sub_new.yaml",
+		Path:     "./proxy_providers/sub1.yaml",
+		Interval: 7200,
+	})
+	if err != nil {
+		t.Fatalf("UpdateProxyProvider failed: %v", err)
+	}
+
+	providers = editor.GetProxyProviders()
+	if len(providers) != 1 || providers[0].Interval != 7200 {
+		t.Fatalf("Failed to verify updated proxy provider")
+	}
+
+	err = editor.DeleteProxyProvider("sub1")
+	if err != nil {
+		t.Fatalf("DeleteProxyProvider failed: %v", err)
+	}
+	if len(editor.GetProxyProviders()) != 0 {
+		t.Fatalf("Expected 0 proxy providers after delete")
+	}
+
+	// 3. Test Raw Rules CRUD and Move
+	rulesBefore := editor.GetRules()
+	initialCount := len(rulesBefore)
+
+	err = editor.AddRuleRaw("DOMAIN,test.example.com,DIRECT", 0)
+	if err != nil {
+		t.Fatalf("AddRuleRaw failed: %v", err)
+	}
+	rulesAfterAdd := editor.GetRules()
+	if len(rulesAfterAdd) != initialCount+1 || rulesAfterAdd[0] != "DOMAIN,test.example.com,DIRECT" {
+		t.Fatalf("Expected rule at index 0, got %v", rulesAfterAdd)
+	}
+
+	err = editor.UpdateRuleAt(0, "DOMAIN,test2.example.com,REJECT")
+	if err != nil {
+		t.Fatalf("UpdateRuleAt failed: %v", err)
+	}
+	if editor.GetRules()[0] != "DOMAIN,test2.example.com,REJECT" {
+		t.Fatalf("UpdateRuleAt did not update rule")
+	}
+
+	err = editor.MoveRule(0, 1)
+	if err != nil {
+		t.Fatalf("MoveRule failed: %v", err)
+	}
+	if editor.GetRules()[1] != "DOMAIN,test2.example.com,REJECT" {
+		t.Fatalf("MoveRule did not move rule to index 1")
+	}
+
+	err = editor.DeleteRuleAt(1)
+	if err != nil {
+		t.Fatalf("DeleteRuleAt failed: %v", err)
+	}
+	if len(editor.GetRules()) != initialCount {
+		t.Fatalf("Expected rule count to return to initial")
+	}
+
+	// Save and verify persistence
+	if err := editor.Save(); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+}
+

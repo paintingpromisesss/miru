@@ -1,4 +1,4 @@
-﻿package server
+package server
 
 import (
 	"encoding/json"
@@ -116,11 +116,7 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		if err := s.ReloadMihomo(); err != nil {
-			log.Printf("[Mihomo] Reload failed: %v", err)
-		}
-	}()
+	s.asyncReloadMihomo("add rule " + req.Name)
 
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Status:  "ok",
@@ -164,11 +160,7 @@ func (s *Server) handleEditRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		if err := s.ReloadMihomo(); err != nil {
-			log.Printf("[Mihomo] Reload warning after edit %s: %v", req.Name, err)
-		}
-	}()
+	s.asyncReloadMihomo("edit rule " + req.Name)
 
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Status:  "ok",
@@ -220,11 +212,7 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		if err := s.ReloadMihomo(); err != nil {
-			log.Printf("[Mihomo] Reload failed: %v", err)
-		}
-	}()
+	s.asyncReloadMihomo("delete rule " + name)
 
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Status:  "ok",

@@ -63,6 +63,17 @@ func (s *Server) handleRulePreview(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
+		if len(data) == 0 && rawURL != "" {
+			urlBase := filepath.Base(strings.Split(rawURL, "?")[0])
+			if urlBase != "" && urlBase != "." && urlBase != "/" {
+				candidate := filepath.Join(s.rulesDir, urlBase)
+				if b, err := os.ReadFile(candidate); err == nil && len(b) > 0 {
+					data = b
+					source = "local"
+				}
+			}
+		}
 	}
 
 	if len(data) == 0 {

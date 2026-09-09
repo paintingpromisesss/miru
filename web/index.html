@@ -96,13 +96,9 @@ tailwind.config = {
       <button data-tab="catalog" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-zinc-100 text-zinc-100 font-semibold">
         <span>Rules Catalog</span>
       </button>
-      <button data-tab="active" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700">
-        <span>Active Directives</span>
-        <span id="tab-count-active" class="hidden px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700/50">0</span>
-      </button>
-      <button data-tab="local" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700">
-        <span>Config & Files</span>
-        <span id="tab-count-files" class="hidden px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700/50">0</span>
+      <button data-tab="settings" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700">
+        <span>Settings</span>
+        <span id="tab-count-settings" class="hidden px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700/50">0</span>
       </button>
     </nav>
   </div>
@@ -135,6 +131,50 @@ const API = {
   deleteRule: (name, deleteFile = true) => fetch(`/api/rules?name=${encodeURIComponent(name)}&delete_file=${deleteFile}`, {
     method: 'DELETE'
   }),
+  addProxyGroup: (data) => fetch('/api/proxy-groups', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }),
+  editProxyGroup: (data) => fetch('/api/proxy-groups', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }),
+  deleteProxyGroup: (name) => fetch(`/api/proxy-groups?name=${encodeURIComponent(name)}`, {
+    method: 'DELETE'
+  }),
+  addProxyProvider: (data) => fetch('/api/proxy-providers', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }),
+  editProxyProvider: (data) => fetch('/api/proxy-providers', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }),
+  deleteProxyProvider: (name) => fetch(`/api/proxy-providers?name=${encodeURIComponent(name)}`, {
+    method: 'DELETE'
+  }),
+  addRawRule: (rule, index = -1) => fetch('/api/raw-rules', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ rule, index })
+  }),
+  editRawRule: (index, rule) => fetch('/api/raw-rules', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ index, rule })
+  }),
+  deleteRawRule: (index) => fetch(`/api/raw-rules?index=${index}`, {
+    method: 'DELETE'
+  }),
+  moveRawRule: (from, to) => fetch('/api/raw-rules/move', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ from, to })
+  }),
   toggleGlobalQuic: (enabled) => fetch('/api/quic/global', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -156,6 +196,13 @@ const API = {
 
 let state = {
   currentTab: 'catalog',
+  settingsSubTab: 'groups', // 'groups' | 'providers' | 'rules' | 'directives'
+  groupSearch: '',
+  groupTypeFilter: 'all',
+  providerSearch: '',
+  providerTypeFilter: 'all',
+  rulesSearch: '',
+  rulesTypeFilter: 'all',
   local: null,
   catalog: [],
   catalogMap: {},
@@ -444,18 +491,13 @@ function renderMihomoStatus(status) {
 
 function updateStats() {
   if (!state.local) return;
-  const activeCount = (state.local.rules || []).filter(r => r.trim().startsWith('RULE-SET,')).length;
-  const fileCount = (state.local.disk_files || []).length;
-
-  const tabActiveBadge = document.getElementById('tab-count-active');
-  if (tabActiveBadge) {
-    tabActiveBadge.textContent = activeCount;
-    tabActiveBadge.classList.remove('hidden');
-  }
-  const tabFilesBadge = document.getElementById('tab-count-files');
-  if (tabFilesBadge) {
-    tabFilesBadge.textContent = fileCount;
-    tabFilesBadge.classList.remove('hidden');
+  const settingsBadge = document.getElementById('tab-count-settings');
+  if (settingsBadge) {
+    const totalItems = (state.local.proxy_group_entries || []).length +
+                       (state.local.proxy_providers || []).length +
+                       (state.local.rules || []).length;
+    settingsBadge.textContent = totalItems;
+    settingsBadge.classList.remove('hidden');
   }
 
   if (state.local.mihomo_status) {
@@ -469,12 +511,9 @@ function render() {
   if (state.currentTab === 'catalog') {
     content.innerHTML = renderCatalogView();
     bindCatalogEvents();
-  } else if (state.currentTab === 'active') {
-    content.innerHTML = renderActiveRulesView();
-    bindActiveEvents();
-  } else if (state.currentTab === 'local') {
-    content.innerHTML = renderLocalView();
-    bindLocalEvents();
+  } else if (state.currentTab === 'settings') {
+    content.innerHTML = renderSettingsView();
+    bindSettingsEvents();
   }
 }
 
@@ -665,9 +704,20 @@ function updateCatalogTable() {
             <span class="font-semibold text-zinc-200">${escapeHtml(item.name)}</span>
             ${item.applied ? `
               <span class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400 font-mono">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Active
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Active${item.applied_name && item.applied_name.toLowerCase() !== item.name.toLowerCase() ? ` (${escapeHtml(item.applied_name)})` : ''}
               </span>
             ` : ''}
+            ${item.downloaded ? (
+              item.has_diff ? `
+                <span class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-400 font-mono px-1.5 py-0.2 rounded bg-amber-500/10 border border-amber-500/20" title="Local file size (${formatBytes(item.disk_size)}) differs from repository (${formatBytes(item.size)})">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Downloaded (diff)
+                </span>
+              ` : `
+                <span class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400 font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20" title="Downloaded (${formatBytes(item.disk_size || item.size)})">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Downloaded
+                </span>
+              `
+            ) : ''}
             ${item.block_quic ? `
               <span class="inline-flex items-center text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC</span>
             ` : ''}
@@ -933,24 +983,180 @@ document.addEventListener('click', () => {
   if (menuBeh) menuBeh.classList.add('hidden');
 });
 
-function renderActiveRulesView() {
-  if (!state.local) return '<div class="text-center py-12 text-zinc-500 font-mono">Loading config...</div>';
+function parseMihomoRule(rule) {
+  const raw = (rule || '').trim();
+  if (!raw) return { raw: '', type: '', payload: '', target: '', noResolve: false };
 
-  const rules = (state.local.rules || []).filter(r => r.trim().startsWith('RULE-SET,'));
-  const providersMap = {};
-  (state.local.rule_providers || []).forEach(p => { providersMap[p.name] = p; });
+  if (raw.toUpperCase().startsWith('MATCH,')) {
+    const parts = raw.split(',');
+    return { raw, type: 'MATCH', payload: '', target: (parts[1] || '').trim(), noResolve: false };
+  }
 
-  const diskMap = {};
-  (state.local.disk_files || []).forEach(f => { diskMap[f.name.toLowerCase()] = f; });
+  if (raw.startsWith('AND,') || raw.startsWith('OR,') || raw.startsWith('NOT,')) {
+    const firstComma = raw.indexOf(',');
+    const lastComma = raw.lastIndexOf(',');
+    if (lastComma > firstComma) {
+      return {
+        raw,
+        type: raw.substring(0, firstComma).trim(),
+        payload: raw.substring(firstComma + 1, lastComma).trim(),
+        target: raw.substring(lastComma + 1).trim(),
+        noResolve: false,
+      };
+    }
+  }
+
+  const parts = raw.split(',').map(s => s.trim());
+  const type = parts[0] || '';
+  const payload = parts[1] || '';
+  const target = parts[2] || '';
+  const noResolve = parts.slice(3).some(p => p.toLowerCase() === 'no-resolve');
+
+  return { raw, type, payload, target, noResolve };
+}
+
+function getGroupTypeBadge(type) {
+  const t = (type || 'select').toLowerCase();
+  const colors = {
+    'select': 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+    'url-test': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    'fallback': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    'load-balance': 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+    'relay': 'bg-pink-500/10 text-pink-400 border-pink-500/20',
+  };
+  const cls = colors[t] || 'bg-zinc-800 text-zinc-300 border-zinc-700';
+  return `<span class="inline-flex items-center text-[10px] font-mono px-2 py-0.5 rounded border ${cls} font-medium uppercase">${escapeHtml(t)}</span>`;
+}
+
+function getRuleTypeBadge(type) {
+  const t = (type || '').toUpperCase();
+  let cls = 'bg-zinc-800 text-zinc-300 border-zinc-700';
+  if (t === 'RULE-SET') cls = 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+  else if (t.startsWith('DOMAIN')) cls = 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+  else if (t.startsWith('IP-CIDR') || t === 'GEOIP' || t === 'GEOSITE') cls = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+  else if (t === 'MATCH') cls = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+  else if (t === 'AND' || t === 'OR' || t === 'NOT') cls = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+  else if (t.includes('PORT')) cls = 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+  return `<span class="inline-flex items-center text-[10px] font-mono px-2 py-0.5 rounded border ${cls} font-medium uppercase">${escapeHtml(t || 'RULE')}</span>`;
+}
+
+function getTargetBadge(target) {
+  const t = (target || '').toUpperCase();
+  let cls = 'bg-zinc-800 text-zinc-200 border-zinc-700';
+  if (t === 'DIRECT') cls = 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
+  else if (t === 'REJECT') cls = 'bg-red-500/10 text-red-400 border-red-500/20';
+  else if (t === 'GLOBAL') cls = 'bg-amber-500/10 text-amber-300 border-amber-500/20';
+  else if (t === 'PROXY' || t === 'UNBLOCK') cls = 'bg-sky-500/10 text-sky-300 border-sky-500/20';
+  return `<span class="inline-flex items-center text-[11px] font-mono px-2 py-0.5 rounded border ${cls} font-semibold">${escapeHtml(target)}</span>`;
+}
+
+function renderSettingsView() {
+  if (!state.local) return '<div class="text-center py-12 text-zinc-500 font-mono">Loading configuration...</div>';
+
+  const s = state.local;
+  const subTab = state.settingsSubTab || 'groups';
+
+  const groupsCount = (s.proxy_group_entries || []).length;
+  const provCount = (s.proxy_providers || []).length;
+  const rulesCount = (s.rules || []).length;
+  const directivesCount = (s.rules || []).filter(r => r.trim().startsWith('RULE-SET,')).length;
+
+  let subContent = '';
+  if (subTab === 'groups') {
+    subContent = renderSettingsProxyGroups(s);
+  } else if (subTab === 'providers') {
+    subContent = renderSettingsProxyProviders(s);
+  } else if (subTab === 'rules') {
+    subContent = renderSettingsRules(s);
+  } else if (subTab === 'directives') {
+    subContent = renderSettingsDirectives(s);
+  }
+
+  return `
+    <div class="space-y-5 w-full">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3 flex-wrap gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
+          <button data-settings-sub="groups" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${subTab === 'groups' ? 'bg-zinc-800 border-zinc-700 text-zinc-100 font-semibold' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
+            <span>Proxy Groups</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${subTab === 'groups' ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800 text-zinc-500'}">${groupsCount}</span>
+          </button>
+          <button data-settings-sub="providers" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${subTab === 'providers' ? 'bg-zinc-800 border-zinc-700 text-zinc-100 font-semibold' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
+            <span>Proxy Providers</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${subTab === 'providers' ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800 text-zinc-500'}">${provCount}</span>
+          </button>
+          <button data-settings-sub="rules" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${subTab === 'rules' ? 'bg-zinc-800 border-zinc-700 text-zinc-100 font-semibold' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
+            <span>Rules Sequence</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${subTab === 'rules' ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800 text-zinc-500'}">${rulesCount}</span>
+          </button>
+          <button data-settings-sub="directives" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${subTab === 'directives' ? 'bg-zinc-800 border-zinc-700 text-zinc-100 font-semibold' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
+            <span>Directives & Files</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${subTab === 'directives' ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800 text-zinc-500'}">${directivesCount}</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="settings-sub-content" class="w-full">
+        ${subContent}
+      </div>
+    </div>
+  `;
+}
+
+function bindSettingsEvents() {
+  document.querySelectorAll('[data-settings-sub]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.settingsSubTab = btn.dataset.settingsSub;
+      render();
+    });
+  });
+
+  const subTab = state.settingsSubTab || 'groups';
+  if (subTab === 'groups') bindSettingsProxyGroupsEvents();
+  else if (subTab === 'providers') bindSettingsProxyProvidersEvents();
+  else if (subTab === 'rules') bindSettingsRulesEvents();
+  else if (subTab === 'directives') bindSettingsDirectivesEvents();
+}
+
+function renderSettingsProxyGroups(s) {
+  const q = (state.groupSearch || '').toLowerCase().trim();
+  const tf = (state.groupTypeFilter || 'all').toLowerCase();
+
+  const allGroups = s.proxy_group_entries || [];
+  const filtered = allGroups.filter(g => {
+    if (tf !== 'all' && (g.type || 'select').toLowerCase() !== tf) return false;
+    if (q) {
+      const matchName = (g.name || '').toLowerCase().includes(q);
+      const matchType = (g.type || '').toLowerCase().includes(q);
+      const matchProxies = (g.proxies || []).some(p => p.toLowerCase().includes(q));
+      const matchUse = (g.use || []).some(u => u.toLowerCase().includes(q));
+      if (!matchName && !matchType && !matchProxies && !matchUse) return false;
+    }
+    return true;
+  });
+
+  const types = ['all', 'select', 'url-test', 'fallback', 'load-balance', 'relay'];
 
   return `
     <div class="space-y-4 w-full">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-sm font-semibold text-zinc-100">Registered Rule Directives</h2>
-          <p class="text-xs text-zinc-500">Mihomo traffic matching these sets is forwarded to target proxy groups</p>
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between w-full">
+        <div class="relative w-full sm:w-72">
+          <svg class="w-4 h-4 absolute left-3 top-2.5 text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input id="input-group-search" type="text" value="${escapeHtml(state.groupSearch)}" placeholder="Search groups, proxies..." class="h-9 w-full pl-9 pr-3 bg-zinc-900 border border-zinc-800 rounded-md text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 font-mono">
         </div>
-        <span class="text-xs font-mono text-zinc-400 bg-zinc-900 px-2.5 py-1 rounded border border-zinc-800">${rules.length} active directives</span>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex items-center gap-1 bg-zinc-900/60 p-0.5 rounded-md border border-zinc-800">
+            ${types.map(t => `
+              <button data-group-type="${t}" class="h-7 px-2.5 text-xs font-medium rounded transition-colors ${tf === t ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}">
+                ${t === 'all' ? 'All' : t}
+              </button>
+            `).join('')}
+          </div>
+          <button id="btn-add-proxy-group" class="h-8 px-3 text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded-md transition-colors shadow-sm flex items-center gap-1.5 ml-auto">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Proxy Group
+          </button>
+        </div>
       </div>
 
       <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
@@ -958,73 +1164,66 @@ function renderActiveRulesView() {
           <thead>
             <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
               <th class="py-2.5 px-4 w-12">#</th>
-              <th class="py-2.5 px-4">Provider / Ruleset</th>
-              <th class="py-2.5 px-4">Target Group</th>
-              <th class="py-2.5 px-4">Behavior</th>
-              <th class="py-2.5 px-4">Local Binary (.mrs)</th>
+              <th class="py-2.5 px-4">Group Name</th>
+              <th class="py-2.5 px-4">Type</th>
+              <th class="py-2.5 px-4">Proxies / Providers</th>
+              <th class="py-2.5 px-4">Health Check / Strategy</th>
               <th class="py-2.5 px-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-zinc-800/60 text-xs">
-            ${rules.length === 0 ? `
+            ${filtered.length === 0 ? `
               <tr>
-                <td colspan="6" class="py-12 text-center text-zinc-500">
-                  No active RULE-SET directives in config. Add rules from the Catalog tab or via Custom MRS.
+                <td colspan="6" class="py-12 text-center text-zinc-500 font-mono">
+                  ${allGroups.length === 0 ? 'No proxy groups configured in config.yaml' : 'No proxy groups matching filter criteria'}
                 </td>
               </tr>
-            ` : rules.map((rule, idx) => {
-              const parts = rule.split(',').map(s => s.trim());
-              const name = parts[1] || '';
-              const targetGroup = parts[2] || '';
-              const prov = providersMap[name];
-              const fileName = (name + '.mrs').toLowerCase();
-              const diskFile = diskMap[fileName];
-              const isQuic = (state.local.quic_blocked || []).some(q => q.toLowerCase() === name.toLowerCase());
-
+            ` : filtered.map((g, idx) => {
+              const proxies = g.proxies || [];
+              const providers = g.use || [];
               return `
                 <tr class="hover:bg-zinc-900/50 transition-colors">
                   <td class="py-2.5 px-4 font-mono text-zinc-500">${idx + 1}</td>
                   <td class="py-2.5 px-4 font-mono">
                     <div class="flex items-center gap-2">
-                      <span class="font-semibold text-zinc-100">${escapeHtml(name)}</span>
-                      ${isQuic ? `
-                        <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC Blocked</span>
-                      ` : ''}
+                      <span class="font-semibold text-zinc-100">${escapeHtml(g.name)}</span>
+                      ${g.lazy ? `<span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">lazy</span>` : ''}
+                      ${g.disable_udp ? `<span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">no-udp</span>` : ''}
                     </div>
-                    ${prov && prov.url ? `<div class="text-[11px] text-zinc-500 truncate max-w-sm">${escapeHtml(prov.url)}</div>` : ''}
+                    ${g.filter ? `<div class="text-[10px] text-zinc-500 font-mono truncate max-w-xs">filter: ${escapeHtml(g.filter)}</div>` : ''}
+                    ${g.exclude_filter ? `<div class="text-[10px] text-zinc-500 font-mono truncate max-w-xs">exclude: ${escapeHtml(g.exclude_filter)}</div>` : ''}
                   </td>
                   <td class="py-2.5 px-4">
-                    <span class="inline-flex items-center text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-200 border border-zinc-700 font-semibold">
-                      ${escapeHtml(targetGroup)}
-                    </span>
+                    ${getGroupTypeBadge(g.type)}
+                  </td>
+                  <td class="py-2.5 px-4">
+                    <div class="flex flex-wrap gap-1 max-w-md">
+                      ${proxies.slice(0, 6).map(p => `
+                        <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 border border-zinc-700/80">${escapeHtml(p)}</span>
+                      `).join('')}
+                      ${proxies.length > 6 ? `<span class="text-[10px] font-mono text-zinc-500 self-center">+${proxies.length - 6} more</span>` : ''}
+                      ${providers.map(u => `
+                        <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-medium">use: ${escapeHtml(u)}</span>
+                      `).join('')}
+                      ${proxies.length === 0 && providers.length === 0 ? `<span class="text-zinc-600 italic">None</span>` : ''}
+                    </div>
                   </td>
                   <td class="py-2.5 px-4 font-mono text-zinc-400">
-                    ${prov ? escapeHtml(prov.behavior) : 'domain'}
-                  </td>
-                  <td class="py-2.5 px-4">
-                    ${diskFile ? `
-                      <span class="inline-flex items-center gap-1.5 text-[11px] text-emerald-400 font-mono">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        Downloaded (${formatBytes(diskFile.size)})
-                      </span>
-                    ` : `
-                      <span class="inline-flex items-center gap-1.5 text-[11px] text-amber-400 font-mono">
-                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                        Pending Core Download
-                      </span>
-                    `}
+                    ${g.url ? `
+                      <div class="flex flex-col gap-0.5">
+                        <span class="text-[11px] text-zinc-300 truncate max-w-[200px]" title="${escapeHtml(g.url)}">${escapeHtml(g.url)}</span>
+                        <div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                          ${g.interval ? `<span>interval: ${g.interval}s</span>` : ''}
+                          ${g.tolerance ? `<span>tolerance: ${g.tolerance}ms</span>` : ''}
+                        </div>
+                      </div>
+                    ` : (g.strategy ? `
+                      <span class="text-[11px] text-zinc-300">strategy: ${escapeHtml(g.strategy)}</span>
+                    ` : `<span class="text-zinc-600">-</span>`)}
                   </td>
                   <td class="py-2.5 px-4 text-right whitespace-nowrap">
-                    <button data-preview-rule="${escapeHtml(name)}" title="Preview ruleset contents" class="h-7 px-2 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors mr-1 inline-flex items-center gap-1">
-                      <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                      View
-                    </button>
-                    <button data-edit-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">
-                      Edit
-                    </button>
-                    <button data-delete-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">
-                      Delete
-                    </button>
+                    <button data-edit-group="${escapeHtml(g.name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">Edit</button>
+                    <button data-delete-group="${escapeHtml(g.name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">Delete</button>
                   </td>
                 </tr>
               `;
@@ -1036,10 +1235,556 @@ function renderActiveRulesView() {
   `;
 }
 
-function bindActiveEvents() {
+function bindSettingsProxyGroupsEvents() {
+  const searchInput = document.getElementById('input-group-search');
+  if (searchInput) {
+    let timer;
+    searchInput.oninput = (e) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        state.groupSearch = e.target.value;
+        const subContent = document.getElementById('settings-sub-content');
+        if (subContent && state.local) {
+          subContent.innerHTML = renderSettingsProxyGroups(state.local);
+          bindSettingsProxyGroupsEvents();
+        }
+      }, 70);
+    };
+  }
+
+  document.querySelectorAll('[data-group-type]').forEach(btn => {
+    btn.onclick = () => {
+      state.groupTypeFilter = btn.dataset.groupType;
+      const subContent = document.getElementById('settings-sub-content');
+      if (subContent && state.local) {
+        subContent.innerHTML = renderSettingsProxyGroups(state.local);
+        bindSettingsProxyGroupsEvents();
+      }
+    };
+  });
+
+  const addBtn = document.getElementById('btn-add-proxy-group');
+  if (addBtn) addBtn.onclick = () => openProxyGroupModal(null);
+
+  document.querySelectorAll('[data-edit-group]').forEach(btn => {
+    btn.onclick = () => openProxyGroupModal(btn.dataset.editGroup);
+  });
+
+  document.querySelectorAll('[data-delete-group]').forEach(btn => {
+    btn.onclick = () => confirmDeleteProxyGroup(btn.dataset.deleteGroup);
+  });
+}
+
+function renderSettingsProxyProviders(s) {
+  const q = (state.providerSearch || '').toLowerCase().trim();
+  const tf = (state.providerTypeFilter || 'all').toLowerCase();
+
+  const allProviders = s.proxy_providers || [];
+  const filtered = allProviders.filter(p => {
+    if (tf !== 'all' && (p.type || 'http').toLowerCase() !== tf) return false;
+    if (q) {
+      const matchName = (p.name || '').toLowerCase().includes(q);
+      const matchUrl = (p.url || '').toLowerCase().includes(q);
+      const matchPath = (p.path || '').toLowerCase().includes(q);
+      if (!matchName && !matchUrl && !matchPath) return false;
+    }
+    return true;
+  });
+
+  const types = ['all', 'http', 'file'];
+
+  return `
+    <div class="space-y-4 w-full">
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between w-full">
+        <div class="relative w-full sm:w-72">
+          <svg class="w-4 h-4 absolute left-3 top-2.5 text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input id="input-provider-search" type="text" value="${escapeHtml(state.providerSearch)}" placeholder="Search providers by name, URL, path..." class="h-9 w-full pl-9 pr-3 bg-zinc-900 border border-zinc-800 rounded-md text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 font-mono">
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex items-center gap-1 bg-zinc-900/60 p-0.5 rounded-md border border-zinc-800">
+            ${types.map(t => `
+              <button data-provider-type="${t}" class="h-7 px-2.5 text-xs font-medium rounded transition-colors ${tf === t ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}">
+                ${t === 'all' ? 'All' : t}
+              </button>
+            `).join('')}
+          </div>
+          <button id="btn-add-proxy-provider" class="h-8 px-3 text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded-md transition-colors shadow-sm flex items-center gap-1.5 ml-auto">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Proxy Provider
+          </button>
+        </div>
+      </div>
+
+      <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
+              <th class="py-2.5 px-4 w-12">#</th>
+              <th class="py-2.5 px-4">Provider Name</th>
+              <th class="py-2.5 px-4">Type</th>
+              <th class="py-2.5 px-4">Source (URL / Path)</th>
+              <th class="py-2.5 px-4">Interval</th>
+              <th class="py-2.5 px-4">Health Check</th>
+              <th class="py-2.5 px-4">Filters</th>
+              <th class="py-2.5 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-800/60 text-xs">
+            ${filtered.length === 0 ? `
+              <tr>
+                <td colspan="8" class="py-12 text-center text-zinc-500 font-mono">
+                  ${allProviders.length === 0 ? 'No proxy providers configured in config.yaml' : 'No proxy providers matching filter criteria'}
+                </td>
+              </tr>
+            ` : filtered.map((p, idx) => {
+              const ptype = (p.type || 'http').toLowerCase();
+              const hc = p.health_check || {};
+              const isHc = hc.enable;
+              return `
+                <tr class="hover:bg-zinc-900/50 transition-colors">
+                  <td class="py-2.5 px-4 font-mono text-zinc-500">${idx + 1}</td>
+                  <td class="py-2.5 px-4 font-mono">
+                    <span class="font-semibold text-zinc-100">${escapeHtml(p.name)}</span>
+                    ${p.proxy ? `<div class="text-[10px] text-zinc-500">via: <span class="text-zinc-400">${escapeHtml(p.proxy)}</span></div>` : ''}
+                  </td>
+                  <td class="py-2.5 px-4">
+                    <span class="inline-flex items-center text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-medium ${ptype === 'http' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}">${escapeHtml(ptype)}</span>
+                  </td>
+                  <td class="py-2.5 px-4 font-mono text-zinc-300">
+                    ${p.url ? `<div class="truncate max-w-xs text-[11px]" title="${escapeHtml(p.url)}">${escapeHtml(p.url)}</div>` : ''}
+                    ${p.path ? `<div class="text-[10px] text-zinc-500 truncate max-w-xs">${escapeHtml(p.path)}</div>` : ''}
+                  </td>
+                  <td class="py-2.5 px-4 font-mono text-zinc-400">
+                    ${p.interval ? `${p.interval}s` : `<span class="text-zinc-600">-</span>`}
+                  </td>
+                  <td class="py-2.5 px-4 font-mono">
+                    ${isHc ? `
+                      <div class="flex flex-col gap-0.5">
+                        <span class="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
+                          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Enabled (${hc.interval || 300}s)
+                        </span>
+                        ${hc.url ? `<span class="text-[10px] text-zinc-500 truncate max-w-[160px]" title="${escapeHtml(hc.url)}">${escapeHtml(hc.url)}</span>` : ''}
+                      </div>
+                    ` : `
+                      <span class="text-zinc-600 text-[11px]">Disabled</span>
+                    `}
+                  </td>
+                  <td class="py-2.5 px-4 font-mono text-[11px]">
+                    ${p.filter ? `<div class="text-zinc-400 truncate max-w-[130px]" title="filter: ${escapeHtml(p.filter)}">regex: ${escapeHtml(p.filter)}</div>` : ''}
+                    ${p.exclude_filter ? `<div class="text-amber-400/80 truncate max-w-[130px]" title="exclude: ${escapeHtml(p.exclude_filter)}">exclude: ${escapeHtml(p.exclude_filter)}</div>` : ''}
+                    ${p.exclude_type ? `<div class="text-zinc-500 text-[10px]">type: ${escapeHtml(p.exclude_type)}</div>` : ''}
+                    ${!p.filter && !p.exclude_filter && !p.exclude_type ? `<span class="text-zinc-600">-</span>` : ''}
+                  </td>
+                  <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                    <button data-edit-provider="${escapeHtml(p.name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">Edit</button>
+                    <button data-delete-provider="${escapeHtml(p.name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">Delete</button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function bindSettingsProxyProvidersEvents() {
+  const searchInput = document.getElementById('input-provider-search');
+  if (searchInput) {
+    let timer;
+    searchInput.oninput = (e) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        state.providerSearch = e.target.value;
+        const subContent = document.getElementById('settings-sub-content');
+        if (subContent && state.local) {
+          subContent.innerHTML = renderSettingsProxyProviders(state.local);
+          bindSettingsProxyProvidersEvents();
+        }
+      }, 70);
+    };
+  }
+
+  document.querySelectorAll('[data-provider-type]').forEach(btn => {
+    btn.onclick = () => {
+      state.providerTypeFilter = btn.dataset.providerType;
+      const subContent = document.getElementById('settings-sub-content');
+      if (subContent && state.local) {
+        subContent.innerHTML = renderSettingsProxyProviders(state.local);
+        bindSettingsProxyProvidersEvents();
+      }
+    };
+  });
+
+  const addBtn = document.getElementById('btn-add-proxy-provider');
+  if (addBtn) addBtn.onclick = () => openProxyProviderModal(null);
+
+  document.querySelectorAll('[data-edit-provider]').forEach(btn => {
+    btn.onclick = () => openProxyProviderModal(btn.dataset.editProvider);
+  });
+
+  document.querySelectorAll('[data-delete-provider]').forEach(btn => {
+    btn.onclick = () => confirmDeleteProxyProvider(btn.dataset.deleteProvider);
+  });
+}
+
+function renderSettingsRules(s) {
+  const q = (state.rulesSearch || '').toLowerCase().trim();
+  const tf = (state.rulesTypeFilter || 'all').toUpperCase();
+
+  const allRules = s.rules || [];
+  const parsedRules = allRules.map((r, originalIdx) => {
+    const parsed = parseMihomoRule(r);
+    return { ...parsed, originalIdx };
+  });
+
+  const filtered = parsedRules.filter(item => {
+    if (tf !== 'ALL') {
+      if (tf === 'OTHER') {
+        const standardTypes = ['RULE-SET', 'DOMAIN', 'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD', 'IP-CIDR', 'IP-CIDR6', 'GEOIP', 'GEOSITE', 'MATCH'];
+        if (standardTypes.includes(item.type.toUpperCase())) return false;
+      } else if (item.type.toUpperCase() !== tf) {
+        return false;
+      }
+    }
+    if (q) {
+      const matchRaw = item.raw.toLowerCase().includes(q);
+      const matchPayload = item.payload.toLowerCase().includes(q);
+      const matchTarget = item.target.toLowerCase().includes(q);
+      if (!matchRaw && !matchPayload && !matchTarget) return false;
+    }
+    return true;
+  });
+
+  const typeOptions = ['ALL', 'RULE-SET', 'DOMAIN', 'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD', 'IP-CIDR', 'GEOIP', 'MATCH', 'OTHER'];
+
+  return `
+    <div class="space-y-4 w-full">
+      <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between w-full">
+        <div class="relative w-full sm:w-72">
+          <svg class="w-4 h-4 absolute left-3 top-2.5 text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input id="input-rules-search" type="text" value="${escapeHtml(state.rulesSearch)}" placeholder="Search rules by payload, target..." class="h-9 w-full pl-9 pr-3 bg-zinc-900 border border-zinc-800 rounded-md text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-500 font-mono">
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex items-center gap-1">
+            <span class="text-[11px] font-mono text-zinc-500">Type:</span>
+            <select id="select-rules-type" class="h-8 px-2 bg-zinc-900 border border-zinc-800 rounded-md text-xs text-zinc-200 font-mono focus:outline-none focus:border-zinc-500">
+              ${typeOptions.map(t => `<option value="${t}" ${tf === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </div>
+          <button id="btn-add-raw-rule" class="h-8 px-3 text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded-md transition-colors shadow-sm flex items-center gap-1.5 ml-auto">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add Rule
+          </button>
+        </div>
+      </div>
+
+      <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
+              <th class="py-2.5 px-3 w-16 text-center">Order</th>
+              <th class="py-2.5 px-4 w-36">Rule Type</th>
+              <th class="py-2.5 px-4">Payload / Criteria</th>
+              <th class="py-2.5 px-4">Target Proxy Group</th>
+              <th class="py-2.5 px-4">Flags</th>
+              <th class="py-2.5 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-zinc-800/60 text-xs">
+            ${filtered.length === 0 ? `
+              <tr>
+                <td colspan="6" class="py-12 text-center text-zinc-500 font-mono">
+                  ${allRules.length === 0 ? 'No rules found in config.yaml' : 'No rules match the filter criteria'}
+                </td>
+              </tr>
+            ` : filtered.map((item) => {
+              const idx = item.originalIdx;
+              const isFirst = idx === 0;
+              const isLast = idx === allRules.length - 1;
+              return `
+                <tr class="hover:bg-zinc-900/50 transition-colors ${item.type === 'MATCH' ? 'bg-amber-500/5' : ''}">
+                  <td class="py-2.5 px-3 font-mono text-zinc-500 text-center">
+                    <div class="flex items-center justify-center gap-1">
+                      <span class="w-6 text-right font-semibold text-zinc-400">${idx + 1}</span>
+                      <div class="flex flex-col">
+                        <button data-rule-up="${idx}" ${isFirst ? 'disabled class="opacity-20 cursor-not-allowed text-zinc-600"' : 'class="hover:text-zinc-200 text-zinc-500 transition-colors" title="Move rule up"'} >▲</button>
+                        <button data-rule-down="${idx}" ${isLast ? 'disabled class="opacity-20 cursor-not-allowed text-zinc-600"' : 'class="hover:text-zinc-200 text-zinc-500 transition-colors" title="Move rule down"'} >▼</button>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="py-2.5 px-4">
+                    ${getRuleTypeBadge(item.type)}
+                  </td>
+                  <td class="py-2.5 px-4 font-mono">
+                    <span class="text-zinc-200 break-all">${escapeHtml(item.payload || (item.type === 'MATCH' ? 'Match-All Outbound Traffic' : ''))}</span>
+                  </td>
+                  <td class="py-2.5 px-4">
+                    ${getTargetBadge(item.target)}
+                  </td>
+                  <td class="py-2.5 px-4 font-mono">
+                    ${item.noResolve ? `
+                      <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">no-resolve</span>
+                    ` : `<span class="text-zinc-600">-</span>`}
+                  </td>
+                  <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                    <button data-edit-raw-rule="${idx}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">Edit</button>
+                    <button data-delete-raw-rule="${idx}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">Delete</button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function bindSettingsRulesEvents() {
+  const searchInput = document.getElementById('input-rules-search');
+  if (searchInput) {
+    let timer;
+    searchInput.oninput = (e) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        state.rulesSearch = e.target.value;
+        const subContent = document.getElementById('settings-sub-content');
+        if (subContent && state.local) {
+          subContent.innerHTML = renderSettingsRules(state.local);
+          bindSettingsRulesEvents();
+        }
+      }, 70);
+    };
+  }
+
+  const typeSelect = document.getElementById('select-rules-type');
+  if (typeSelect) {
+    typeSelect.onchange = (e) => {
+      state.rulesTypeFilter = e.target.value;
+      const subContent = document.getElementById('settings-sub-content');
+      if (subContent && state.local) {
+        subContent.innerHTML = renderSettingsRules(state.local);
+        bindSettingsRulesEvents();
+      }
+    };
+  }
+
+  const addBtn = document.getElementById('btn-add-raw-rule');
+  if (addBtn) addBtn.onclick = () => openRawRuleModal(-1);
+
+  document.querySelectorAll('[data-rule-up]').forEach(btn => {
+    btn.onclick = async () => {
+      const idx = parseInt(btn.dataset.ruleUp, 10);
+      if (idx > 0) {
+        try {
+          await API.moveRawRule(idx, idx - 1);
+          await fetchLocal();
+          render();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      }
+    };
+  });
+
+  document.querySelectorAll('[data-rule-down]').forEach(btn => {
+    btn.onclick = async () => {
+      const idx = parseInt(btn.dataset.ruleDown, 10);
+      const total = (state.local && state.local.rules) ? state.local.rules.length : 0;
+      if (idx < total - 1) {
+        try {
+          await API.moveRawRule(idx, idx + 1);
+          await fetchLocal();
+          render();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      }
+    };
+  });
+
+  document.querySelectorAll('[data-edit-raw-rule]').forEach(btn => {
+    btn.onclick = () => openRawRuleModal(parseInt(btn.dataset.editRawRule, 10));
+  });
+
+  document.querySelectorAll('[data-delete-raw-rule]').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.deleteRawRule, 10);
+      const ruleStr = (state.local && state.local.rules) ? state.local.rules[idx] : '';
+      confirmDeleteRawRule(idx, ruleStr);
+    };
+  });
+}
+
+function renderSettingsDirectives(s) {
+  const rules = (s.rules || []).filter(r => r.trim().startsWith('RULE-SET,'));
+  const providersMap = {};
+  (s.rule_providers || []).forEach(p => { providersMap[p.name] = p; });
+
+  const diskMap = {};
+  (s.disk_files || []).forEach(f => { diskMap[f.name.toLowerCase()] = f; });
+
+  return `
+    <div class="space-y-6 w-full">
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-semibold text-zinc-100">Registered Rule Directives</h2>
+            <p class="text-xs text-zinc-500">Mihomo traffic matching these sets is forwarded to target proxy groups</p>
+          </div>
+          <span class="text-xs font-mono text-zinc-400 bg-zinc-900 px-2.5 py-1 rounded border border-zinc-800">${rules.length} active directives</span>
+        </div>
+
+        <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
+                <th class="py-2.5 px-4 w-12">#</th>
+                <th class="py-2.5 px-4">Provider / Ruleset</th>
+                <th class="py-2.5 px-4">Target Group</th>
+                <th class="py-2.5 px-4">Behavior</th>
+                <th class="py-2.5 px-4">Local Binary (.mrs)</th>
+                <th class="py-2.5 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800/60 text-xs">
+              ${rules.length === 0 ? `
+                <tr>
+                  <td colspan="6" class="py-12 text-center text-zinc-500">
+                    No active RULE-SET directives in config. Add rules from the Catalog tab or via Custom MRS.
+                  </td>
+                </tr>
+              ` : rules.map((rule, idx) => {
+                const parts = rule.split(',').map(str => str.trim());
+                const name = parts[1] || '';
+                const targetGroup = parts[2] || '';
+                const prov = providersMap[name];
+
+                const cleanPURL = prov && prov.url ? prov.url.trim().toLowerCase().replace(/\/+$/, '') : '';
+                const catItem = (state.catalog || []).find(c => {
+                  if (c.applied_name && c.applied_name.toLowerCase() === name.toLowerCase()) return true;
+                  if (c.name.toLowerCase() === name.toLowerCase()) return true;
+                  if (cleanPURL && c.url) {
+                    const cleanCURL = c.url.trim().toLowerCase().replace(/\/+$/, '');
+                    if (cleanPURL === cleanCURL) return true;
+                    if (cleanPURL.endsWith('/' + c.path.toLowerCase())) return true;
+                    if (cleanPURL.endsWith('/' + c.name.toLowerCase() + '.mrs')) return true;
+                  }
+                  return false;
+                });
+
+                let diskFile = diskMap[(name + '.mrs').toLowerCase()];
+                if (!diskFile && prov && prov.path) {
+                  const base = prov.path.split(/[\/\\]/).pop().toLowerCase();
+                  diskFile = diskMap[base];
+                }
+                if (!diskFile && prov && prov.url) {
+                  const urlBase = prov.url.split('?')[0].split('/').pop().toLowerCase();
+                  diskFile = diskMap[urlBase];
+                }
+                if (!diskFile && catItem) {
+                  diskFile = diskMap[(catItem.name + '.mrs').toLowerCase()] || diskMap[catItem.path.split('/').pop().toLowerCase()];
+                }
+
+                const isQuic = (s.quic_blocked || []).some(q => q.toLowerCase() === name.toLowerCase());
+                const hasDiff = diskFile && catItem && catItem.size > 0 && diskFile.size !== catItem.size;
+                const previewUrl = (prov && prov.url) || (catItem && catItem.url) || '';
+
+                return `
+                  <tr class="hover:bg-zinc-900/50 transition-colors">
+                    <td class="py-2.5 px-4 font-mono text-zinc-500">${idx + 1}</td>
+                    <td class="py-2.5 px-4 font-mono">
+                      <div class="flex items-center gap-2">
+                        <span class="font-semibold text-zinc-100">${escapeHtml(name)}</span>
+                        ${isQuic ? `
+                          <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC Blocked</span>
+                        ` : ''}
+                      </div>
+                      ${prov && prov.url ? `<div class="text-[11px] text-zinc-500 truncate max-w-sm">${escapeHtml(prov.url)}</div>` : ''}
+                    </td>
+                    <td class="py-2.5 px-4">
+                      ${getTargetBadge(targetGroup)}
+                    </td>
+                    <td class="py-2.5 px-4 font-mono text-zinc-400">
+                      ${prov ? escapeHtml(prov.behavior) : 'domain'}
+                    </td>
+                    <td class="py-2.5 px-4">
+                      ${diskFile ? (
+                        hasDiff ? `
+                          <div class="flex flex-col gap-0.5">
+                            <span class="inline-flex items-center gap-1.5 text-[11px] text-amber-400 font-mono">
+                              <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                              Downloaded (${formatBytes(diskFile.size)})
+                            </span>
+                            <span class="inline-flex items-center gap-1 text-[10px] text-amber-300/90 font-mono" title="Repository size: ${formatBytes(catItem.size)}">
+                              <span class="px-1 py-0.2 rounded bg-amber-500/10 border border-amber-500/20">diff with repo (${formatBytes(catItem.size)})</span>
+                            </span>
+                          </div>
+                        ` : `
+                          <span class="inline-flex items-center gap-1.5 text-[11px] text-emerald-400 font-mono">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Downloaded (${formatBytes(diskFile.size)})
+                          </span>
+                        `
+                      ) : `
+                        <span class="inline-flex items-center gap-1.5 text-[11px] text-amber-400 font-mono" title="Mihomo core has not downloaded this ruleset binary to disk yet">
+                          <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                          Pending Core Download
+                        </span>
+                      `}
+                    </td>
+                    <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                      <button data-preview-rule="${escapeHtml(name)}" data-preview-url="${escapeHtml(previewUrl)}" title="Preview ruleset contents" class="h-7 px-2 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors mr-1 inline-flex items-center gap-1">
+                        <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                        View
+                      </button>
+                      <button data-edit-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">
+                        Edit
+                      </button>
+                      <button data-delete-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Files in Rules Folder</h3>
+          <span class="text-xs font-mono text-zinc-500">${(s.disk_files || []).length} files</span>
+        </div>
+        <p class="text-xs text-zinc-500 font-mono truncate">${escapeHtml(s.rules_dir)}</p>
+        <div class="max-h-56 overflow-y-auto divide-y divide-zinc-800/60 font-mono text-xs border border-zinc-800 rounded bg-zinc-950/50">
+          ${(s.disk_files || []).length === 0 ? `
+            <div class="p-3 text-zinc-500 text-center italic">No rules downloaded yet.</div>
+          ` : s.disk_files.map(f => `
+            <div class="px-3 py-2 flex items-center justify-between">
+              <span class="text-zinc-200">${escapeHtml(f.name)}</span>
+              <div class="flex items-center gap-2">
+                <span class="text-zinc-500">${formatBytes(f.size)} · ${escapeHtml(f.mod_time)}</span>
+                <button data-preview-file="${escapeHtml(f.name)}" class="h-6 px-2 text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors">View</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function bindSettingsDirectivesEvents() {
   document.querySelectorAll('[data-preview-rule]').forEach(btn => {
     btn.addEventListener('click', () => {
-      openPreviewModal(btn.dataset.previewRule, '');
+      openPreviewModal(btn.dataset.previewRule, btn.dataset.previewUrl || '');
     });
   });
 
@@ -1054,67 +1799,7 @@ function bindActiveEvents() {
       confirmDeleteRule(btn.dataset.deleteRule);
     });
   });
-}
 
-function renderLocalView() {
-  if (!state.local) return '<div class="text-center py-12 text-zinc-500 font-mono">Loading config...</div>';
-
-  const s = state.local;
-
-  return `
-    <div class="space-y-6 w-full">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-        <div class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5 space-y-3">
-          <h3 class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Available Proxy Groups</h3>
-          <p class="text-xs text-zinc-500">Discovered from proxy-groups section in Mihomo config.yaml</p>
-          <div class="flex flex-wrap gap-1.5 pt-1">
-            ${(s.proxy_groups || []).map(g => `
-              <span class="px-2.5 py-1 bg-zinc-900 border border-zinc-800 rounded text-xs font-mono text-zinc-300">${escapeHtml(g)}</span>
-            `).join('')}
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5 space-y-3">
-          <div class="flex items-center justify-between">
-            <h3 class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Files in Rules Folder</h3>
-            <span class="text-xs font-mono text-zinc-500">${(s.disk_files || []).length} files</span>
-          </div>
-          <p class="text-xs text-zinc-500 font-mono truncate">${escapeHtml(s.rules_dir)}</p>
-          <div class="max-h-48 overflow-y-auto divide-y divide-zinc-800/60 font-mono text-xs border border-zinc-800 rounded bg-zinc-950/50">
-            ${(s.disk_files || []).length === 0 ? `
-              <div class="p-3 text-zinc-500 text-center italic">No rules downloaded yet.</div>
-            ` : s.disk_files.map(f => `
-              <div class="px-3 py-2 flex items-center justify-between">
-                <span class="text-zinc-200">${escapeHtml(f.name)}</span>
-                <div class="flex items-center gap-2">
-                  <span class="text-zinc-500">${formatBytes(f.size)} · ${escapeHtml(f.mod_time)}</span>
-                  <button data-preview-file="${escapeHtml(f.name)}" class="h-6 px-2 text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors">View</button>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-      </div>
-
-      <div class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5 space-y-3">
-        <div class="flex items-center justify-between">
-          <h3 class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Mihomo Rules Evaluation Sequence</h3>
-          <span class="text-xs font-mono text-zinc-500">${(s.rules || []).length} total lines</span>
-        </div>
-        <div class="border border-zinc-800 rounded bg-zinc-950 font-mono text-xs max-h-72 overflow-y-auto divide-y divide-zinc-800/50">
-          ${(s.rules || []).map((r, i) => `
-            <div class="px-3 py-1.5 flex items-center gap-3 ${r.includes('MATCH') ? 'bg-amber-500/10 text-amber-300 font-semibold' : 'text-zinc-300'}">
-              <span class="text-zinc-600 select-none w-8 text-right font-mono">${i+1}</span>
-              <span class="truncate">${escapeHtml(r)}</span>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function bindLocalEvents() {
   document.querySelectorAll('[data-preview-file]').forEach(btn => {
     btn.addEventListener('click', () => {
       const fname = btn.dataset.previewFile;
@@ -1124,6 +1809,871 @@ function bindLocalEvents() {
   });
 }
 
+function openProxyGroupModal(groupName = null) {
+  if (!state.local) return;
+  const isEdit = !!groupName;
+  const group = isEdit ? (state.local.proxy_group_entries || []).find(g => g.name === groupName) : null;
+
+  const currentType = group ? (group.type || 'select').toLowerCase() : 'select';
+  const currentName = group ? group.name : '';
+  const currentProxies = new Set(group ? (group.proxies || []) : []);
+  const currentUse = new Set(group ? (group.use || []) : []);
+  const currentUrl = group ? (group.url || 'https://www.gstatic.com/generate_204') : 'https://www.gstatic.com/generate_204';
+  const currentInterval = group && group.interval !== undefined ? group.interval : 300;
+  const currentTolerance = group && group.tolerance !== undefined ? group.tolerance : 50;
+  const currentStrategy = group ? (group.strategy || 'consistent-hashing') : 'consistent-hashing';
+  const currentLazy = group && group.lazy !== undefined ? group.lazy : true;
+  const currentDisableUdp = group && group.disable_udp !== undefined ? group.disable_udp : false;
+  const currentFilter = group ? (group.filter || '') : '';
+  const currentExcludeFilter = group ? (group.exclude_filter || '') : '';
+
+  const discovered = state.local.discovered_proxies || ['DIRECT', 'REJECT', 'GLOBAL'];
+  const allProviders = state.local.proxy_providers || [];
+
+  const modal = document.getElementById('modal-container');
+
+  const renderDynamicFields = (t) => {
+    if (t === 'url-test' || t === 'fallback') {
+      return `
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2">
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Health Check Test URL</label>
+            <input id="modal-group-url" type="text" value="${escapeHtml(currentUrl)}" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+          <div>
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Interval (seconds)</label>
+            <input id="modal-group-interval" type="number" value="${currentInterval}" min="1" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+          ${t === 'url-test' ? `
+            <div>
+              <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Tolerance (ms)</label>
+              <input id="modal-group-tolerance" type="number" value="${currentTolerance}" min="0" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+            </div>
+          ` : '<div></div>'}
+          <div class="col-span-2 flex items-center gap-2 pt-1">
+            <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+              <input id="modal-group-lazy" type="checkbox" ${currentLazy ? 'checked' : ''} class="rounded bg-zinc-900 border-zinc-700">
+              <span>Lazy (only test latency when group is actively matched by traffic)</span>
+            </label>
+          </div>
+        </div>
+      `;
+    } else if (t === 'load-balance') {
+      return `
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Load Balancing Strategy</label>
+            <select id="modal-group-strategy" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 focus:border-zinc-500 focus:outline-none text-xs">
+              <option value="consistent-hashing" ${currentStrategy === 'consistent-hashing' ? 'selected' : ''}>consistent-hashing</option>
+              <option value="round-robin" ${currentStrategy === 'round-robin' ? 'selected' : ''}>round-robin</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Interval (seconds)</label>
+            <input id="modal-group-interval" type="number" value="${currentInterval}" min="1" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Health Check URL</label>
+            <input id="modal-group-url" type="text" value="${escapeHtml(currentUrl)}" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+          <div class="col-span-2 flex items-center gap-2 pt-1">
+            <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+              <input id="modal-group-lazy" type="checkbox" ${currentLazy ? 'checked' : ''} class="rounded bg-zinc-900 border-zinc-700">
+              <span>Lazy (only test when matched)</span>
+            </label>
+          </div>
+        </div>
+      `;
+    } else if (t === 'select') {
+      return `
+        <div class="pt-1">
+          <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+            <input id="modal-group-disable-udp" type="checkbox" ${currentDisableUdp ? 'checked' : ''} class="rounded bg-zinc-900 border-zinc-700">
+            <span>Disable UDP for this group</span>
+          </label>
+        </div>
+      `;
+    } else if (t === 'relay') {
+      return `
+        <p class="text-zinc-500 text-xs italic">Relay routes packets sequentially through every proxy in the specified list order.</p>
+      `;
+    }
+    return '';
+  };
+
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-xl w-full space-y-4 shadow-2xl relative flex flex-col max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div>
+          <h3 class="font-semibold text-sm text-zinc-100">${isEdit ? 'Edit Proxy Group' : 'Add New Proxy Group'}</h3>
+          <p class="text-xs text-zinc-500 mt-0.5">${isEdit ? 'Modify policy routing group in config.yaml' : 'Define an outbound routing group'}</p>
+        </div>
+        <button id="modal-group-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Group Name</label>
+            <input id="modal-group-name" type="text" value="${escapeHtml(currentName)}" placeholder="e.g. Auto-Select, Fallback-Group" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Group Type</label>
+            <select id="modal-group-type" class="h-9 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 focus:border-zinc-500 focus:outline-none font-medium">
+              <option value="select" ${currentType === 'select' ? 'selected' : ''}>select (manual choice)</option>
+              <option value="url-test" ${currentType === 'url-test' ? 'selected' : ''}>url-test (lowest latency)</option>
+              <option value="fallback" ${currentType === 'fallback' ? 'selected' : ''}>fallback (first available)</option>
+              <option value="load-balance" ${currentType === 'load-balance' ? 'selected' : ''}>load-balance (distribute)</option>
+              <option value="relay" ${currentType === 'relay' ? 'selected' : ''}>relay (proxy chain)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="modal-dynamic-container" class="p-3 bg-zinc-900/40 rounded-md border border-zinc-800/80 space-y-2">
+          ${renderDynamicFields(currentType)}
+        </div>
+
+        <div>
+          <label class="block text-zinc-300 mb-1 font-medium">Proxies Included</label>
+          <p class="text-[11px] text-zinc-500 mb-2">Select discovered proxies or nodes to include in this group:</p>
+          <div class="max-h-36 overflow-y-auto p-2 bg-zinc-900/80 rounded border border-zinc-800 space-y-1 divide-y divide-zinc-800/40">
+            ${discovered.map(p => `
+              <label class="flex items-center gap-2 py-1 px-1 rounded hover:bg-zinc-800/60 cursor-pointer text-xs select-none">
+                <input type="checkbox" data-proxy-chk="${escapeHtml(p)}" ${currentProxies.has(p) ? 'checked' : ''} class="rounded bg-zinc-950 border-zinc-700">
+                <span class="font-mono text-zinc-200 text-[11px]">${escapeHtml(p)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+
+        ${allProviders.length > 0 ? `
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Use Proxy Providers (use)</label>
+            <div class="flex flex-wrap gap-2 pt-1">
+              ${allProviders.map(pr => `
+                <label class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-900 border border-zinc-800 text-xs cursor-pointer select-none hover:border-zinc-700">
+                  <input type="checkbox" data-prov-chk="${escapeHtml(pr.name)}" ${currentUse.has(pr.name) ? 'checked' : ''} class="rounded bg-zinc-950 border-zinc-700">
+                  <span class="font-mono text-zinc-200 text-[11px]">${escapeHtml(pr.name)}</span>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <div>
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Filter Regex (optional)</label>
+            <input id="modal-group-filter" type="text" value="${escapeHtml(currentFilter)}" placeholder="e.g. (HK|US|SG)" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-200 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+          <div>
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Exclude Filter (optional)</label>
+            <input id="modal-group-exclude" type="text" value="${escapeHtml(currentExcludeFilter)}" placeholder="e.g. (Traffic|Expired)" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-200 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+        <button id="modal-group-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
+        <button id="modal-group-save" class="h-8 px-3 rounded-md text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 transition-colors">Save & Reload</button>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+
+  document.getElementById('modal-group-close').onclick = closeModal;
+  document.getElementById('modal-group-cancel').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  const typeSelect = document.getElementById('modal-group-type');
+  typeSelect.onchange = (e) => {
+    const dynContainer = document.getElementById('modal-dynamic-container');
+    if (dynContainer) {
+      dynContainer.innerHTML = renderDynamicFields(e.target.value);
+    }
+  };
+
+  document.getElementById('modal-group-save').onclick = async () => {
+    const name = document.getElementById('modal-group-name').value.trim();
+    if (!name) {
+      showToast('Proxy group name is required', 'error');
+      return;
+    }
+    const t = typeSelect.value;
+    const selectedProxies = [];
+    document.querySelectorAll('[data-proxy-chk]:checked').forEach(cb => {
+      selectedProxies.push(cb.dataset.proxyChk);
+    });
+
+    const selectedUse = [];
+    document.querySelectorAll('[data-prov-chk]:checked').forEach(cb => {
+      selectedUse.push(cb.dataset.provChk);
+    });
+
+    if (selectedProxies.length === 0 && selectedUse.length === 0) {
+      showToast('At least one proxy or proxy-provider must be selected', 'warning');
+      return;
+    }
+
+    const payload = {
+      name,
+      type: t,
+      proxies: selectedProxies,
+    };
+    if (selectedUse.length > 0) payload.use = selectedUse;
+
+    const urlInput = document.getElementById('modal-group-url');
+    if (urlInput && urlInput.value.trim()) payload.url = urlInput.value.trim();
+
+    const intervalInput = document.getElementById('modal-group-interval');
+    if (intervalInput && intervalInput.value) payload.interval = parseInt(intervalInput.value, 10);
+
+    const toleranceInput = document.getElementById('modal-group-tolerance');
+    if (toleranceInput && toleranceInput.value) payload.tolerance = parseInt(toleranceInput.value, 10);
+
+    const stratSelect = document.getElementById('modal-group-strategy');
+    if (stratSelect) payload.strategy = stratSelect.value;
+
+    const lazyChk = document.getElementById('modal-group-lazy');
+    if (lazyChk) payload.lazy = lazyChk.checked;
+
+    const udpChk = document.getElementById('modal-group-disable-udp');
+    if (udpChk) payload.disable_udp = udpChk.checked;
+
+    const filterInput = document.getElementById('modal-group-filter');
+    if (filterInput && filterInput.value.trim()) payload.filter = filterInput.value.trim();
+
+    const exclInput = document.getElementById('modal-group-exclude');
+    if (exclInput && exclInput.value.trim()) payload.exclude_filter = exclInput.value.trim();
+
+    const saveBtn = document.getElementById('modal-group-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+      if (isEdit) {
+        payload.old_name = groupName;
+        await API.editProxyGroup(payload);
+        showToast(`Proxy group "${name}" updated`, 'success');
+      } else {
+        await API.addProxyGroup(payload);
+        showToast(`Proxy group "${name}" created`, 'success');
+      }
+      closeModal();
+      await fetchLocal();
+      render();
+    } catch (err) {
+      showToast(err.message, 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save & Reload';
+    }
+  };
+}
+
+function confirmDeleteProxyGroup(groupName) {
+  const modal = document.getElementById('modal-container');
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-sm w-full space-y-4 shadow-2xl relative" onclick="event.stopPropagation()">
+      <div>
+        <h3 class="font-semibold text-sm text-zinc-100">Delete Proxy Group</h3>
+        <p class="text-xs text-zinc-400 font-mono mt-1">${escapeHtml(groupName)}</p>
+      </div>
+      <p class="text-xs text-zinc-400 leading-relaxed">
+        Are you sure you want to delete proxy group <strong class="text-zinc-200 font-mono">${escapeHtml(groupName)}</strong>? Any routing rules pointing to this group will lose their target and may cause Mihomo core errors.
+      </p>
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+        <button id="modal-del-group-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
+        <button id="modal-del-group-confirm" class="h-8 px-3 rounded-md text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors">Delete Group</button>
+      </div>
+    </div>
+  `;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+  document.getElementById('modal-del-group-cancel').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  document.getElementById('modal-del-group-confirm').onclick = async () => {
+    const btn = document.getElementById('modal-del-group-confirm');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    try {
+      await API.deleteProxyGroup(groupName);
+      showToast(`Proxy group "${groupName}" deleted`, 'success');
+      closeModal();
+      await fetchLocal();
+      render();
+    } catch (err) {
+      showToast(err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Delete Group';
+    }
+  };
+}
+
+function openProxyProviderModal(provName = null) {
+  if (!state.local) return;
+  const isEdit = !!provName;
+  const p = isEdit ? (state.local.proxy_providers || []).find(pr => pr.name === provName) : null;
+
+  const currentName = p ? p.name : '';
+  const currentType = p ? (p.type || 'http').toLowerCase() : 'http';
+  const currentUrl = p ? (p.url || '') : '';
+  const currentPath = p ? (p.path || (isEdit ? '' : `./proxy_providers/${currentName || 'provider'}.yaml`)) : './proxy_providers/provider.yaml';
+  const currentInterval = p && p.interval !== undefined ? p.interval : 86400;
+  const currentProxy = p ? (p.proxy || '') : '';
+  const currentFilter = p ? (p.filter || '') : '';
+  const currentExcludeFilter = p ? (p.exclude_filter || '') : '';
+  const currentExcludeType = p ? (p.exclude_type || '') : '';
+
+  const hc = (p && p.health_check) || {};
+  const currentHcEnable = !!hc.enable;
+  const currentHcUrl = hc.url || 'https://www.gstatic.com/generate_204';
+  const currentHcInterval = hc.interval !== undefined ? hc.interval : 300;
+  const currentHcTimeout = hc.timeout !== undefined ? hc.timeout : 5000;
+  const currentHcLazy = hc.lazy !== undefined ? hc.lazy : true;
+  const currentHcExpected = hc.expected_status !== undefined ? hc.expected_status : '';
+
+  const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+
+  const modal = document.getElementById('modal-container');
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-xl w-full space-y-4 shadow-2xl relative flex flex-col max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div>
+          <h3 class="font-semibold text-sm text-zinc-100">${isEdit ? 'Edit Proxy Provider' : 'Add New Proxy Provider'}</h3>
+          <p class="text-xs text-zinc-500 mt-0.5">External proxy subscription or local node file</p>
+        </div>
+        <button id="modal-prov-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Provider Identifier (Name)</label>
+            <input id="modal-prov-name" type="text" value="${escapeHtml(currentName)}" placeholder="e.g. my-subscription" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Type</label>
+            <select id="modal-prov-type" class="h-9 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 focus:border-zinc-500 focus:outline-none font-medium">
+              <option value="http" ${currentType === 'http' ? 'selected' : ''}>http (remote subscription)</option>
+              <option value="file" ${currentType === 'file' ? 'selected' : ''}>file (local file path)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="modal-prov-url-wrapper" class="${currentType === 'file' ? 'hidden' : ''}">
+          <label class="block text-zinc-300 mb-1 font-medium">Subscription URL</label>
+          <input id="modal-prov-url" type="text" value="${escapeHtml(currentUrl)}" placeholder="https://example.com/api/v1/client/subscribe?token=..." class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Storage Path</label>
+            <input id="modal-prov-path" type="text" value="${escapeHtml(currentPath)}" placeholder="./proxy_providers/mysub.yaml" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Update Interval (seconds)</label>
+            <input id="modal-prov-interval" type="number" value="${currentInterval}" min="0" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Download Proxy Routing</label>
+            <select id="modal-prov-proxy" class="h-8 w-full px-2 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 focus:border-zinc-500 focus:outline-none text-xs font-mono">
+              <option value="" ${!currentProxy ? 'selected' : ''}>DIRECT (default / direct)</option>
+              ${groups.map(g => `<option value="${escapeHtml(g)}" ${g === currentProxy ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Exclude Node Types</label>
+            <input id="modal-prov-exclude-type" type="text" value="${escapeHtml(currentExcludeType)}" placeholder="e.g. ss|ssr" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-200 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Filter Regex (nodes matching)</label>
+            <input id="modal-prov-filter" type="text" value="${escapeHtml(currentFilter)}" placeholder="e.g. (HK|SG|JP)" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-200 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+          <div>
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Exclude Filter Regex</label>
+            <input id="modal-prov-exclude-filter" type="text" value="${escapeHtml(currentExcludeFilter)}" placeholder="e.g. (Traffic|Expired)" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-200 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+          </div>
+        </div>
+
+        <!-- Health check configuration -->
+        <div class="p-3 bg-zinc-900/40 rounded-md border border-zinc-800 space-y-3">
+          <div class="flex items-center justify-between">
+            <label class="flex items-center gap-2 text-xs text-zinc-200 font-medium cursor-pointer">
+              <input id="modal-prov-hc-enable" type="checkbox" ${currentHcEnable ? 'checked' : ''} class="rounded bg-zinc-950 border-zinc-700">
+              <span>Enable Node Health Check</span>
+            </label>
+            <span class="text-[10px] font-mono text-zinc-500">Mihomo automated ping</span>
+          </div>
+
+          <div id="modal-prov-hc-body" class="space-y-3 pt-1 ${currentHcEnable ? '' : 'hidden'}">
+            <div>
+              <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Test URL</label>
+              <input id="modal-prov-hc-url" type="text" value="${escapeHtml(currentHcUrl)}" class="h-8 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Interval (s)</label>
+                <input id="modal-prov-hc-interval" type="number" value="${currentHcInterval}" min="1" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+              </div>
+              <div>
+                <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Timeout (ms)</label>
+                <input id="modal-prov-hc-timeout" type="number" value="${currentHcTimeout}" min="100" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+              </div>
+              <div>
+                <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Expected Status</label>
+                <input id="modal-prov-hc-status" type="number" value="${currentHcExpected}" placeholder="204" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none text-xs">
+              </div>
+            </div>
+            <div class="pt-1">
+              <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+                <input id="modal-prov-hc-lazy" type="checkbox" ${currentHcLazy ? 'checked' : ''} class="rounded bg-zinc-950 border-zinc-700">
+                <span>Lazy check (only test when nodes are actively queried)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+        <button id="modal-prov-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
+        <button id="modal-prov-save" class="h-8 px-3 rounded-md text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 transition-colors">Save & Reload</button>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+
+  document.getElementById('modal-prov-close').onclick = closeModal;
+  document.getElementById('modal-prov-cancel').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  const typeSelect = document.getElementById('modal-prov-type');
+  typeSelect.onchange = (e) => {
+    const urlWrapper = document.getElementById('modal-prov-url-wrapper');
+    if (urlWrapper) {
+      if (e.target.value === 'file') urlWrapper.classList.add('hidden');
+      else urlWrapper.classList.remove('hidden');
+    }
+  };
+
+  const hcEnableChk = document.getElementById('modal-prov-hc-enable');
+  hcEnableChk.onchange = (e) => {
+    const hcBody = document.getElementById('modal-prov-hc-body');
+    if (hcBody) {
+      if (e.target.checked) hcBody.classList.remove('hidden');
+      else hcBody.classList.add('hidden');
+    }
+  };
+
+  document.getElementById('modal-prov-save').onclick = async () => {
+    const name = document.getElementById('modal-prov-name').value.trim();
+    if (!name) {
+      showToast('Proxy provider name is required', 'error');
+      return;
+    }
+    const t = typeSelect.value;
+    const url = document.getElementById('modal-prov-url').value.trim();
+    const path = document.getElementById('modal-prov-path').value.trim();
+    const interval = parseInt(document.getElementById('modal-prov-interval').value, 10) || 0;
+    const proxy = document.getElementById('modal-prov-proxy').value;
+    const filter = document.getElementById('modal-prov-filter').value.trim();
+    const excludeFilter = document.getElementById('modal-prov-exclude-filter').value.trim();
+    const excludeType = document.getElementById('modal-prov-exclude-type').value.trim();
+
+    const isHc = document.getElementById('modal-prov-hc-enable').checked;
+    let healthCheck = null;
+    if (isHc) {
+      healthCheck = {
+        enable: true,
+        url: document.getElementById('modal-prov-hc-url').value.trim() || 'https://www.gstatic.com/generate_204',
+        interval: parseInt(document.getElementById('modal-prov-hc-interval').value, 10) || 300,
+        timeout: parseInt(document.getElementById('modal-prov-hc-timeout').value, 10) || 5000,
+        lazy: document.getElementById('modal-prov-hc-lazy').checked,
+      };
+      const expStatus = document.getElementById('modal-prov-hc-status').value.trim();
+      if (expStatus) healthCheck.expected_status = parseInt(expStatus, 10);
+    }
+
+    const payload = {
+      name,
+      type: t,
+      path,
+      interval,
+    };
+    if (t === 'http' && url) payload.url = url;
+    if (proxy) payload.proxy = proxy;
+    if (filter) payload.filter = filter;
+    if (excludeFilter) payload.exclude_filter = excludeFilter;
+    if (excludeType) payload.exclude_type = excludeType;
+    if (healthCheck) payload.health_check = healthCheck;
+
+    const saveBtn = document.getElementById('modal-prov-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+      if (isEdit) {
+        payload.old_name = provName;
+        await API.editProxyProvider(payload);
+        showToast(`Proxy provider "${name}" updated`, 'success');
+      } else {
+        await API.addProxyProvider(payload);
+        showToast(`Proxy provider "${name}" created`, 'success');
+      }
+      closeModal();
+      await fetchLocal();
+      render();
+    } catch (err) {
+      showToast(err.message, 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save & Reload';
+    }
+  };
+}
+
+function confirmDeleteProxyProvider(provName) {
+  const modal = document.getElementById('modal-container');
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-sm w-full space-y-4 shadow-2xl relative" onclick="event.stopPropagation()">
+      <div>
+        <h3 class="font-semibold text-sm text-zinc-100">Delete Proxy Provider</h3>
+        <p class="text-xs text-zinc-400 font-mono mt-1">${escapeHtml(provName)}</p>
+      </div>
+      <p class="text-xs text-zinc-400 leading-relaxed">
+        Are you sure you want to remove proxy provider <strong class="text-zinc-200 font-mono">${escapeHtml(provName)}</strong> from <code>config.yaml</code>?
+      </p>
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+        <button id="modal-del-prov-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
+        <button id="modal-del-prov-confirm" class="h-8 px-3 rounded-md text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors">Delete Provider</button>
+      </div>
+    </div>
+  `;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+  document.getElementById('modal-del-prov-cancel').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  document.getElementById('modal-del-prov-confirm').onclick = async () => {
+    const btn = document.getElementById('modal-del-prov-confirm');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    try {
+      await API.deleteProxyProvider(provName);
+      showToast(`Proxy provider "${provName}" deleted`, 'success');
+      closeModal();
+      await fetchLocal();
+      render();
+    } catch (err) {
+      showToast(err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Delete Provider';
+    }
+  };
+}
+
+function openRawRuleModal(index = -1) {
+  if (!state.local) return;
+  const isEdit = index >= 0;
+  const rules = state.local.rules || [];
+  const currentRuleStr = isEdit ? (rules[index] || '') : '';
+  const parsed = parseMihomoRule(currentRuleStr);
+
+  const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+  const allTargets = ['DIRECT', 'REJECT', 'GLOBAL', ...groups.filter(g => !['DIRECT', 'REJECT', 'GLOBAL'].includes(g))];
+
+  const modal = document.getElementById('modal-container');
+  let isRawMode = false;
+
+  const ruleTypes = [
+    'RULE-SET', 'DOMAIN', 'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD',
+    'IP-CIDR', 'IP-CIDR6', 'GEOIP', 'GEOSITE',
+    'DST-PORT', 'SRC-PORT', 'PROCESS-NAME',
+    'MATCH', 'AND', 'OR', 'NOT'
+  ];
+
+  const initialType = parsed.type || 'DOMAIN-SUFFIX';
+  const initialPayload = parsed.payload || '';
+  const initialTarget = parsed.target || (groups[0] || 'DIRECT');
+  const initialNoResolve = parsed.noResolve;
+
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-lg w-full space-y-4 shadow-2xl relative flex flex-col max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div>
+          <h3 class="font-semibold text-sm text-zinc-100">${isEdit ? `Edit Rule #${index + 1}` : 'Add New Rule to Sequence'}</h3>
+          <p class="text-xs text-zinc-500 mt-0.5">${isEdit ? 'Update rule in rules sequence' : 'Insert rule into rules evaluation order'}</p>
+        </div>
+        <button id="modal-rule-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
+      </div>
+
+      <div class="flex items-center gap-1 bg-zinc-900/60 p-0.5 rounded-md border border-zinc-800 text-xs">
+        <button id="modal-tab-visual" class="flex-1 py-1 px-2 rounded font-medium transition-colors bg-zinc-800 text-zinc-100 shadow-sm">Visual Builder</button>
+        <button id="modal-tab-raw" class="flex-1 py-1 px-2 rounded font-medium transition-colors text-zinc-400 hover:text-zinc-200">Raw YAML String</button>
+      </div>
+
+      <div id="modal-rule-visual" class="space-y-4 text-xs">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Rule Type</label>
+            <select id="modal-rule-type" class="h-9 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 focus:border-zinc-500 focus:outline-none font-medium font-mono text-xs">
+              ${ruleTypes.map(t => `<option value="${t}" ${t === initialType ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-zinc-300 mb-1 font-medium">Target Proxy Group</label>
+            <select id="modal-rule-target" class="h-9 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 focus:border-zinc-500 focus:outline-none font-medium font-mono text-xs">
+              ${allTargets.map(t => `<option value="${escapeHtml(t)}" ${t === initialTarget ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <div id="modal-rule-payload-wrap" class="${initialType === 'MATCH' ? 'hidden' : ''}">
+          <label class="block text-zinc-300 mb-1 font-medium">Payload / Match Criteria</label>
+          <input id="modal-rule-payload" type="text" value="${escapeHtml(initialPayload)}" placeholder="e.g. google.com, 192.168.1.0/24, geosite-category" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none">
+        </div>
+
+        <div id="modal-rule-noresolve-wrap" class="pt-1">
+          <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+            <input id="modal-rule-noresolve" type="checkbox" ${initialNoResolve ? 'checked' : ''} class="rounded bg-zinc-950 border-zinc-700">
+            <span>no-resolve (skip DNS resolution for IP-CIDR / GEOIP)</span>
+          </label>
+        </div>
+
+        ${!isEdit ? `
+          <div>
+            <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Insert Position</label>
+            <select id="modal-rule-position" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded text-zinc-200 focus:border-zinc-500 focus:outline-none font-mono text-xs">
+              <option value="0">At Top (Index 0 - Highest priority)</option>
+              <option value="-1" selected>At Bottom (Before final MATCH if present)</option>
+              ${rules.map((r, i) => `<option value="${i}">Before #${i + 1}: ${escapeHtml(r.substring(0, 35))}${r.length > 35 ? '...' : ''}</option>`).join('')}
+            </select>
+          </div>
+        ` : ''}
+
+        <div class="p-3 bg-zinc-900/60 rounded-md border border-zinc-800 space-y-1">
+          <div class="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">Live Preview</div>
+          <div id="modal-rule-preview" class="font-mono text-xs text-zinc-200 select-all font-semibold"></div>
+        </div>
+      </div>
+
+      <div id="modal-rule-raw" class="space-y-3 text-xs hidden">
+        <div>
+          <label class="block text-zinc-300 mb-1 font-medium">Exact Rule String</label>
+          <input id="modal-rule-raw-input" type="text" value="${escapeHtml(currentRuleStr)}" placeholder="e.g. DOMAIN-SUFFIX,example.com,PROXY,no-resolve" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none">
+          <p class="text-[11px] text-zinc-500 mt-1">Standard Mihomo rule format: TYPE,PAYLOAD,TARGET[,no-resolve]</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
+        <button id="modal-rule-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
+        <button id="modal-rule-save" class="h-8 px-3 rounded-md text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 transition-colors">Save & Reload</button>
+      </div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+  document.getElementById('modal-rule-close').onclick = closeModal;
+  document.getElementById('modal-rule-cancel').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  const tabVisual = document.getElementById('modal-tab-visual');
+  const tabRaw = document.getElementById('modal-tab-raw');
+  const viewVisual = document.getElementById('modal-rule-visual');
+  const viewRaw = document.getElementById('modal-rule-raw');
+
+  const typeEl = document.getElementById('modal-rule-type');
+  const payloadEl = document.getElementById('modal-rule-payload');
+  const targetEl = document.getElementById('modal-rule-target');
+  const noResolveEl = document.getElementById('modal-rule-noresolve');
+  const previewEl = document.getElementById('modal-rule-preview');
+  const rawInput = document.getElementById('modal-rule-raw-input');
+
+  const updatePreview = () => {
+    const t = typeEl.value;
+    const target = targetEl.value;
+    const payload = payloadEl.value.trim();
+    const nr = noResolveEl.checked;
+
+    let res = '';
+    if (t === 'MATCH') {
+      res = `MATCH,${target}`;
+    } else {
+      res = `${t},${payload},${target}`;
+      if (nr) res += ',no-resolve';
+    }
+    previewEl.textContent = res;
+    rawInput.value = res;
+  };
+
+  typeEl.onchange = () => {
+    const isMatch = typeEl.value === 'MATCH';
+    const pwrap = document.getElementById('modal-rule-payload-wrap');
+    if (pwrap) {
+      if (isMatch) pwrap.classList.add('hidden');
+      else pwrap.classList.remove('hidden');
+    }
+    updatePreview();
+  };
+  payloadEl.oninput = updatePreview;
+  targetEl.onchange = updatePreview;
+  noResolveEl.onchange = updatePreview;
+
+  updatePreview();
+
+  tabVisual.onclick = () => {
+    isRawMode = false;
+    tabVisual.className = 'flex-1 py-1 px-2 rounded font-medium transition-colors bg-zinc-800 text-zinc-100 shadow-sm';
+    tabRaw.className = 'flex-1 py-1 px-2 rounded font-medium transition-colors text-zinc-400 hover:text-zinc-200';
+    viewVisual.classList.remove('hidden');
+    viewRaw.classList.add('hidden');
+  };
+
+  tabRaw.onclick = () => {
+    isRawMode = true;
+    tabRaw.className = 'flex-1 py-1 px-2 rounded font-medium transition-colors bg-zinc-800 text-zinc-100 shadow-sm';
+    tabVisual.className = 'flex-1 py-1 px-2 rounded font-medium transition-colors text-zinc-400 hover:text-zinc-200';
+    viewRaw.classList.remove('hidden');
+    viewVisual.classList.add('hidden');
+  };
+
+  document.getElementById('modal-rule-save').onclick = async () => {
+    let finalRuleStr = '';
+    if (isRawMode) {
+      finalRuleStr = rawInput.value.trim();
+    } else {
+      const t = typeEl.value;
+      const target = targetEl.value;
+      const payload = payloadEl.value.trim();
+      const nr = noResolveEl.checked;
+      if (t === 'MATCH') {
+        finalRuleStr = `MATCH,${target}`;
+      } else {
+        if (!payload) {
+          showToast('Payload is required for rule type ' + t, 'error');
+          return;
+        }
+        finalRuleStr = `${t},${payload},${target}`;
+        if (nr) finalRuleStr += ',no-resolve';
+      }
+    }
+
+    if (!finalRuleStr) {
+      showToast('Rule string cannot be empty', 'error');
+      return;
+    }
+
+    const saveBtn = document.getElementById('modal-rule-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+      if (isEdit) {
+        await API.editRawRule(index, finalRuleStr);
+        showToast(`Rule #${index + 1} updated`, 'success');
+      } else {
+        const posEl = document.getElementById('modal-rule-position');
+        const insertIdx = posEl ? parseInt(posEl.value, 10) : -1;
+        await API.addRawRule(finalRuleStr, insertIdx);
+        showToast('Rule added to sequence', 'success');
+      }
+      closeModal();
+      await fetchLocal();
+      render();
+    } catch (err) {
+      showToast(err.message, 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save & Reload';
+    }
+  };
+}
+
+function confirmDeleteRawRule(index, ruleStr) {
+  const modal = document.getElementById('modal-container');
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-sm w-full space-y-4 shadow-2xl relative" onclick="event.stopPropagation()">
+      <div>
+        <h3 class="font-semibold text-sm text-zinc-100">Delete Rule #${index + 1}</h3>
+      </div>
+      <p class="text-xs font-mono text-zinc-300 bg-zinc-900 p-2 rounded border border-zinc-800 break-all">${escapeHtml(ruleStr)}</p>
+      <p class="text-xs text-zinc-400 leading-relaxed">
+        Are you sure you want to remove this rule line from <code>config.yaml</code>?
+      </p>
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+        <button id="modal-del-raw-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
+        <button id="modal-del-raw-confirm" class="h-8 px-3 rounded-md text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors">Delete Rule</button>
+      </div>
+    </div>
+  `;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.innerHTML = '';
+  };
+  document.getElementById('modal-del-raw-cancel').onclick = closeModal;
+  modal.onclick = closeModal;
+
+  document.getElementById('modal-del-raw-confirm').onclick = async () => {
+    const btn = document.getElementById('modal-del-raw-confirm');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    try {
+      await API.deleteRawRule(index);
+      showToast(`Rule #${index + 1} deleted`, 'success');
+      closeModal();
+      await fetchLocal();
+      render();
+    } catch (err) {
+      showToast(err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Delete Rule';
+    }
+  };
+}
+
+
 function openAddRuleModal(preset = null) {
   if (!state.local || (state.local.proxy_groups || []).length === 0) {
     showToast('No proxy groups detected in Mihomo config.yaml', 'error');
@@ -1131,6 +2681,7 @@ function openAddRuleModal(preset = null) {
   }
 
   const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+  const isGlobalQuic = state.local && !!state.local.global_quic_blocked;
   const defaultGroup = groups.includes('UNBLOCK') ? 'UNBLOCK' :
                        groups.includes('PROXY') ? 'PROXY' :
                        groups.includes('STABLE') ? 'STABLE' : groups[0];
@@ -1151,10 +2702,10 @@ function openAddRuleModal(preset = null) {
         <button id="modal-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
       </div>
 
-      <div class="space-y-3.5 text-xs">
+      <div class="space-y-4 text-xs">
         <div>
-          <label class="block text-zinc-300 mb-1 font-medium">Provider Name (Rule-Set ID)</label>
-          <input id="modal-name" type="text" value="${escapeHtml(initialName)}" placeholder="e.g. youtube or my-domains" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none">
+          <label class="block text-zinc-300 mb-1 font-medium">Ruleset Identifier (Name)</label>
+          <input id="modal-name" type="text" value="${escapeHtml(initialName)}" placeholder="e.g. youtube, openai, telegram" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none">
         </div>
 
         <div>
@@ -1188,18 +2739,26 @@ function openAddRuleModal(preset = null) {
           </select>
         </div>
 
-        <label class="flex items-start gap-2.5 p-3 rounded-md bg-zinc-900/60 border border-zinc-800 cursor-pointer hover:border-zinc-700 transition-colors">
-          <input id="modal-quic" type="checkbox" class="mt-0.5 rounded bg-zinc-950 border-zinc-700">
-          <div>
-            <div class="font-semibold text-zinc-200 text-xs flex items-center gap-1.5">
-              Block QUIC traffic
-              <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">UDP 443 → REJECT</span>
+        <div class="p-3 rounded-md ${isGlobalQuic ? 'bg-zinc-900/30 border border-zinc-800/60 opacity-60' : 'bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700'} transition-colors">
+          <label class="flex items-start gap-2.5 ${isGlobalQuic ? 'cursor-not-allowed' : 'cursor-pointer'}">
+            <input id="modal-quic" type="checkbox" ${isGlobalQuic ? 'checked disabled' : ''} class="mt-0.5 rounded bg-zinc-950 border-zinc-700">
+            <div>
+              <div class="font-semibold text-zinc-200 text-xs flex items-center gap-1.5 flex-wrap">
+                Block QUIC traffic
+                <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20">UDP 443 → REJECT</span>
+                ${isGlobalQuic ? `
+                  <span class="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/30">Globally Blocked</span>
+                ` : ''}
+              </div>
+              <p class="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                ${isGlobalQuic
+                  ? 'Global QUIC block is currently enabled and blocks UDP 443 for all traffic before individual rules.'
+                  : 'Forces clients (YouTube, Google) to fallback from HTTP/3 to HTTPS (TCP), preventing ISP UDP throttling and timeouts.'
+                }
+              </p>
             </div>
-            <p class="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
-              Forces clients (YouTube, Google) to fallback from HTTP/3 to HTTPS (TCP), preventing ISP UDP throttling and timeouts.
-            </p>
-          </div>
-        </label>
+          </label>
+        </div>
       </div>
 
       <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
@@ -1228,7 +2787,7 @@ function openAddRuleModal(preset = null) {
     const behavior = document.getElementById('modal-behavior').value;
     const format = document.getElementById('modal-format').value;
     const proxyGroup = document.getElementById('modal-group').value;
-    const blockQuic = document.getElementById('modal-quic').checked;
+    const blockQuic = isGlobalQuic ? false : document.getElementById('modal-quic').checked;
 
     if (!name || !url || !proxyGroup) {
       showToast('Please fill all fields', 'error');
@@ -1279,6 +2838,7 @@ function openEditRuleModal(name) {
 
   const prov = (state.local.rule_providers || []).find(p => p.name.toLowerCase() === name.toLowerCase());
   const isQuic = (state.local.quic_blocked || []).some(q => q.toLowerCase() === name.toLowerCase());
+  const isGlobalQuic = state.local && !!state.local.global_quic_blocked;
 
   const currentUrl = prov ? prov.url : '';
   const currentBehavior = prov ? prov.behavior : 'domain';
@@ -1303,18 +2863,26 @@ function openEditRuleModal(name) {
           </select>
         </div>
 
-        <label class="flex items-start gap-2.5 p-3 rounded-md bg-zinc-900/60 border border-zinc-800 cursor-pointer hover:border-zinc-700 transition-colors">
-          <input id="modal-edit-quic" type="checkbox" ${isQuic ? 'checked' : ''} class="mt-0.5 rounded bg-zinc-950 border-zinc-700">
-          <div>
-            <div class="font-semibold text-zinc-200 text-xs flex items-center gap-1.5">
-              Block QUIC traffic
-              <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20 font-medium">UDP 443 → REJECT</span>
+        <div class="p-3 rounded-md ${isGlobalQuic ? 'bg-zinc-900/30 border border-zinc-800/60 opacity-60' : 'bg-zinc-900/60 border border-zinc-800 hover:border-zinc-700'} transition-colors">
+          <label class="flex items-start gap-2.5 ${isGlobalQuic ? 'cursor-not-allowed' : 'cursor-pointer'}">
+            <input id="modal-edit-quic" type="checkbox" ${isGlobalQuic ? 'checked disabled' : (isQuic ? 'checked' : '')} class="mt-0.5 rounded bg-zinc-950 border-zinc-700">
+            <div>
+              <div class="font-semibold text-zinc-200 text-xs flex items-center gap-1.5 flex-wrap">
+                Block QUIC traffic
+                <span class="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/20 font-medium">UDP 443 → REJECT</span>
+                ${isGlobalQuic ? `
+                  <span class="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-1.5 py-0.2 rounded border border-amber-500/30">Globally Blocked</span>
+                ` : ''}
+              </div>
+              <p class="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                ${isGlobalQuic
+                  ? 'Global QUIC block is currently enabled and blocks UDP 443 for all traffic before individual rules.'
+                  : 'Forces clients (YouTube, Google) to fallback from HTTP/3 to HTTPS (TCP), preventing ISP UDP throttling and timeouts.'
+                }
+              </p>
             </div>
-            <p class="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
-              Forces clients (YouTube, Google) to fallback from HTTP/3 to HTTPS (TCP), preventing ISP UDP throttling and timeouts.
-            </p>
-          </div>
-        </label>
+          </label>
+        </div>
 
         ${prov ? `
           <div class="pt-2 border-t border-zinc-800/80 space-y-3">
@@ -1366,7 +2934,7 @@ function openEditRuleModal(name) {
 
   document.getElementById('modal-edit-save').onclick = async () => {
     const proxyGroup = document.getElementById('modal-edit-group').value;
-    const blockQuic = document.getElementById('modal-edit-quic').checked;
+    const blockQuic = isGlobalQuic ? isQuic : document.getElementById('modal-edit-quic').checked;
     const urlInput = document.getElementById('modal-edit-url');
     const behaviorSelect = document.getElementById('modal-edit-behavior');
     const formatSelect = document.getElementById('modal-edit-format');
@@ -1534,7 +3102,6 @@ function renderPreviewContent(data, closeModal) {
             ${typeBadge}
             <span class="text-xs font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">${data.count.toLocaleString()} rules</span>
           </div>
-          <p class="text-xs text-zinc-500 mt-1">Decoded rule list representation</p>
         </div>
         <button id="modal-preview-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
       </div>
@@ -1561,8 +3128,7 @@ function renderPreviewContent(data, closeModal) {
         <pre id="preview-rules-pre" class="text-zinc-300 font-mono whitespace-pre">${escapeHtml(allRules.join('\n'))}</pre>
       </div>
 
-      <div class="flex items-center justify-between pt-2 border-t border-zinc-800/80 text-xs">
-        <span class="text-[11px] text-zinc-500 font-mono">Tip: Select all with Ctrl+A or use the search bar</span>
+      <div class="flex items-center justify-end pt-2 border-t border-zinc-800/80 text-xs">
         <button id="preview-close-footer" class="h-8 px-4 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Close</button>
       </div>
     </div>
@@ -1596,14 +3162,52 @@ function renderPreviewContent(data, closeModal) {
     }, 80);
   };
 
-  copyBtn.onclick = () => {
-    const textToCopy = filteredRules.join('\n');
-    navigator.clipboard.writeText(textToCopy).then(() => {
+  copyBtn.onclick = async () => {
+    let textToCopy = '';
+    if (filteredRules && filteredRules.length > 0) {
+      textToCopy = filteredRules.join('\n');
+    } else if (rulesPre) {
+      textToCopy = rulesPre.textContent || '';
+    }
+
+    if (!textToCopy) {
+      showToast('No rules to copy', 'warning');
+      return;
+    }
+
+    let copied = false;
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        copied = true;
+      } catch (err) {
+        console.warn('navigator.clipboard.writeText failed:', err);
+      }
+    }
+    if (!copied) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = textToCopy;
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        ta.setAttribute('readonly', '');
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+        copied = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch (err) {
+        console.warn('execCommand fallback failed:', err);
+      }
+    }
+
+    if (copied) {
       copyText.textContent = 'Copied!';
       setTimeout(() => { copyText.textContent = 'Copy All'; }, 2000);
-    }).catch(() => {
+    } else {
       showToast('Failed to copy to clipboard', 'error');
-    });
+    }
   };
 
   downloadBtn.onclick = () => {

@@ -315,3 +315,215 @@ func TestCheckMihomo(t *testing.T) {
 		t.Fatalf("Unexpected api status: %+v", apiStatus)
 	}
 }
+
+func TestCatalogURLMatchingAndDiff(t *testing.T) {
+	srv, mux, _, rulesDir := setupTestServer(t)
+
+	// Inject mock catalog items
+	srv.catalog.SetFilesForTest([]catalog.GitHubFile{
+		{
+			Name:     "google_gemini",
+			Path:     "geo/geosite/google_gemini.mrs",
+			Category: "geosite",
+			Behavior: "domain",
+			Size:     1000,
+			URL:      "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google_gemini.mrs",
+		},
+		{
+			Name:     "github",
+			Path:     "geo/geosite/github.mrs",
+			Category: "geosite",
+			Behavior: "domain",
+			Size:     2000,
+			URL:      "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/github.mrs",
+		},
+	})
+
+	// Add custom rule provider named 'gemini_rules' having URL pointing to google_gemini.mrs
+	err := srv.editor.AddRuleProvider(config.RuleProviderEntry{
+		Name:     "gemini_rules",
+		Type:     "http",
+		Behavior: "domain",
+		Format:   "mrs",
+		URL:      "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google_gemini.mrs",
+		Path:     "rules/google_gemini.mrs",
+	})
+	if err != nil {
+		t.Fatalf("AddRuleProvider failed: %v", err)
+	}
+	_ = srv.editor.AddRule("gemini_rules", "PROXY")
+	_ = srv.editor.Save()
+
+	// Write file to disk with matching size (1000 bytes)
+	diskPath := filepath.Join(rulesDir, "google_gemini.mrs")
+	_ = os.WriteFile(diskPath, make([]byte, 1000), 0644)
+
+	// Call GET /api/catalog
+	req := httptest.NewRequest(http.MethodGet, "/api/catalog", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/catalog returned %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var catResp struct {
+		Items []CatalogItemResponse `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &catResp); err != nil {
+		t.Fatalf("Unmarshal catalog response: %v", err)
+	}
+
+	var geminiItem *CatalogItemResponse
+	for _, it := range catResp.Items {
+		if it.Name == "google_gemini" {
+			i := it
+			geminiItem = &i
+			break
+		}
+	}
+
+	if geminiItem == nil {
+		t.Fatalf("google_gemini not found in catalog response")
+	}
+
+	if !geminiItem.Applied {
+		t.Errorf("Expected google_gemini to be matched and Applied=true, got false")
+	}
+	if geminiItem.AppliedName != "gemini_rules" {
+		t.Errorf("Expected AppliedName='gemini_rules', got %q", geminiItem.AppliedName)
+	}
+	if !geminiItem.Downloaded {
+		t.Errorf("Expected Downloaded=true, got false")
+	}
+	if geminiItem.HasDiff {
+		t.Errorf("Expected HasDiff=false when sizes match, got true")
+	}
+
+	// Now modify disk file size to 1500 bytes -> HasDiff should be true
+	_ = os.WriteFile(diskPath, make([]byte, 1500), 0644)
+
+	recDiff := httptest.NewRecorder()
+	mux.ServeHTTP(recDiff, req)
+
+	_ = json.Unmarshal(recDiff.Body.Bytes(), &catResp)
+	for _, it := range catResp.Items {
+		if it.Name == "google_gemini" {
+			if !it.HasDiff {
+				t.Errorf("Expected HasDiff=true when size differs (1500 vs 1000), got false")
+			}
+			break
+		}
+	}
+}
+
+func TestSettingsEndpoints(t *testing.T) {
+	_, mux, _, _ := setupTestServer(t)
+
+	// 1. Test POST /api/proxy-groups
+	grpPayload := map[string]interface{}{
+		"name":     "FALLBACK-TEST",
+		"type":     "fallback",
+		"proxies":  []string{"DIRECT"},
+		"url":      "http://cp.cloudflare.com/generate_204",
+		"interval": 300,
+	}
+	b, _ := json.Marshal(grpPayload)
+	req := httptest.NewRequest(http.MethodPost, "/api/proxy-groups", bytes.NewReader(b))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/proxy-groups failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 2. Test PUT /api/proxy-groups
+	grpPayload["interval"] = 600
+	b, _ = json.Marshal(grpPayload)
+	req = httptest.NewRequest(http.MethodPut, "/api/proxy-groups", bytes.NewReader(b))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT /api/proxy-groups failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 3. Test DELETE /api/proxy-groups
+	req = httptest.NewRequest(http.MethodDelete, "/api/proxy-groups?name=FALLBACK-TEST", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("DELETE /api/proxy-groups failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 4. Test POST /api/proxy-providers
+	provPayload := map[string]interface{}{
+		"name":     "sub_test",
+		"type":     "http",
+		"url":      "https://example.com/sub.yaml",
+		"path":     "./proxy_providers/sub_test.yaml",
+		"interval": 3600,
+	}
+	b, _ = json.Marshal(provPayload)
+	req = httptest.NewRequest(http.MethodPost, "/api/proxy-providers", bytes.NewReader(b))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/proxy-providers failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 5. Test DELETE /api/proxy-providers
+	req = httptest.NewRequest(http.MethodDelete, "/api/proxy-providers?name=sub_test", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("DELETE /api/proxy-providers failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 6. Test Raw Rules: POST, PUT, MOVE, DELETE
+	ruleReq := map[string]interface{}{
+		"rule":  "DOMAIN-SUFFIX,google.com,PROXY",
+		"index": 0,
+	}
+	b, _ = json.Marshal(ruleReq)
+	req = httptest.NewRequest(http.MethodPost, "/api/raw-rules", bytes.NewReader(b))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/raw-rules failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// PUT
+	ruleReq = map[string]interface{}{
+		"index": 0,
+		"rule":  "DOMAIN-SUFFIX,google.com,UNBLOCK",
+	}
+	b, _ = json.Marshal(ruleReq)
+	req = httptest.NewRequest(http.MethodPut, "/api/raw-rules", bytes.NewReader(b))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT /api/raw-rules failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Move
+	moveReq := map[string]interface{}{
+		"from": 0,
+		"to":   1,
+	}
+	b, _ = json.Marshal(moveReq)
+	req = httptest.NewRequest(http.MethodPost, "/api/raw-rules/move", bytes.NewReader(b))
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/raw-rules/move failed: %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Delete
+	req = httptest.NewRequest(http.MethodDelete, "/api/raw-rules?index=1", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("DELETE /api/raw-rules failed: %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+

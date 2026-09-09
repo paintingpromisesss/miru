@@ -122,3 +122,12 @@ func (c *Catalog) Status() (count int, loadedAt time.Time, lastErr error) {
 	defer c.mu.RUnlock()
 	return len(c.files), c.loadedAt, c.lastErr
 }
+
+// SetFilesForTest allows unit tests to inject mock catalog items without hitting network.
+func (c *Catalog) SetFilesForTest(files []GitHubFile) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.files = files
+	c.loadedAt = time.Now()
+}
+

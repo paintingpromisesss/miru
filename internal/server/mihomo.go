@@ -183,14 +183,19 @@ func (s *Server) handleGlobalQuic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		if err := s.ReloadMihomo(); err != nil {
-			log.Printf("[Mihomo] Reload error after global QUIC toggle: %v", err)
-		}
-	}()
+	s.asyncReloadMihomo("global QUIC toggle")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":              "ok",
 		"global_quic_blocked": req.Enabled,
 	})
 }
+
+func (s *Server) asyncReloadMihomo(action string) {
+	go func() {
+		if err := s.ReloadMihomo(); err != nil {
+			log.Printf("[Mihomo] Reload warning after %s: %v", action, err)
+		}
+	}()
+}
+

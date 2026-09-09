@@ -69,34 +69,11 @@ func readDomainSet(r io.Reader) ([]string, error) {
 	ds.selects, ds.ranks = bitmap.IndexSelect32R64(ds.labelBitmap)
 
 	var rawKeys []string
-	var currentKey []byte
-	var traverse func(int, int) bool
-
-	traverse = func(nodeID, bmIdx int) bool {
-		if getBit(ds.leaves, nodeID) != 0 {
-			rawKeys = append(rawKeys, reverseRunes(string(currentKey)))
-		}
-
-		for ; ; bmIdx++ {
-			if getBit(ds.labelBitmap, bmIdx) != 0 {
-				return true
-			}
-			nextLabel := ds.labels[bmIdx-nodeID]
-			currentKey = append(currentKey, nextLabel)
-			nextNodeID := countZeros(ds.labelBitmap, ds.ranks, bmIdx+1)
-			nextBmIdx := selectIthOne(ds.labelBitmap, ds.ranks, ds.selects, nextNodeID-1) + 1
-			if !traverse(nextNodeID, nextBmIdx) {
-				return false
-			}
-			currentKey = currentKey[:len(currentKey)-1]
-		}
-	}
-
-	traverse(0, 0)
+	ds.traverse(0, 0, nil, &rawKeys)
 	slices.Sort(rawKeys)
 
 	// Remove trie internal markers (+.xxx)
-	var finalRules []string
+	finalRules := make([]string, 0, len(rawKeys))
 	for _, key := range rawKeys {
 		if _, ok := slices.BinarySearch(rawKeys, "+."+key); ok {
 			continue
@@ -105,6 +82,26 @@ func readDomainSet(r io.Reader) ([]string, error) {
 	}
 
 	return finalRules, nil
+}
+
+func (ds *domainSet) traverse(nodeID, bmIdx int, currentKey []byte, rawKeys *[]string) bool {
+	if getBit(ds.leaves, nodeID) != 0 {
+		*rawKeys = append(*rawKeys, reverseRunes(string(currentKey)))
+	}
+
+	for ; ; bmIdx++ {
+		if getBit(ds.labelBitmap, bmIdx) != 0 {
+			return true
+		}
+		nextLabel := ds.labels[bmIdx-nodeID]
+		currentKey = append(currentKey, nextLabel)
+		nextNodeID := countZeros(ds.labelBitmap, ds.ranks, bmIdx+1)
+		nextBmIdx := selectIthOne(ds.labelBitmap, ds.ranks, ds.selects, nextNodeID-1) + 1
+		if !ds.traverse(nextNodeID, nextBmIdx, currentKey, rawKeys) {
+			return false
+		}
+		currentKey = currentKey[:len(currentKey)-1]
+	}
 }
 
 func getBit(bm []uint64, i int) uint64 {

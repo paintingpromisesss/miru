@@ -1,4 +1,4 @@
-﻿package server
+package server
 
 import (
 	"net/http"
@@ -70,6 +70,9 @@ func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
 		"rule_providers":      providers,
 		"rules":               rules,
 		"proxy_groups":        groups,
+		"proxy_group_entries": s.editor.GetProxyGroupEntries(),
+		"proxy_providers":     s.editor.GetProxyProviders(),
+		"discovered_proxies":  s.editor.GetDiscoveredProxies(),
 		"applied_rule_sets":   activeSetNames,
 		"quic_blocked":        quicBlocked,
 		"global_quic_blocked": s.editor.HasGlobalQuicRule(),
