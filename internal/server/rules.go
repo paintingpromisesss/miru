@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"miru/internal/config"
@@ -55,8 +54,8 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 	req.ProxyGroup = strings.TrimSpace(req.ProxyGroup)
 	req.URL = strings.TrimSpace(req.URL)
 
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "Rule name is required")
+	if !validRuleName(req.Name) {
+		writeError(w, http.StatusBadRequest, "Invalid rule name")
 		return
 	}
 	if req.ProxyGroup == "" {
@@ -78,8 +77,17 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 	if req.Format == "" {
 		req.Format = "mrs"
 	}
+	if req.Behavior == "classical" && req.Format == "mrs" {
+		writeError(w,http.StatusBadRequest,"MRS does not support classical rules")
+		return
+	}
 	if req.Path == "" {
-		req.Path = fmt.Sprintf("rules/%s.mrs", req.Name)
+		ext := map[string]string{"mrs":"mrs","text":"txt","yaml":"yaml"}[req.Format]
+		if ext == "" { writeError(w,http.StatusBadRequest,"Unsupported rule format"); return }
+		req.Path = fmt.Sprintf("rules/%s.%s", req.Name, ext)
+	}
+	if _, err := s.safeRulePath(req.Path); err != nil {
+		writeError(w,http.StatusBadRequest,err.Error()); return
 	}
 
 	provEntry := config.RuleProviderEntry{
@@ -173,13 +181,13 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = strings.TrimSpace(r.URL.Query().Get("provider"))
 	}
-	if name == "" {
+	if !validRuleName(name) {
 		writeError(w, http.StatusBadRequest, "Query parameter 'name' or 'provider' required")
 		return
 	}
 
 	deleteFileParam := strings.ToLower(r.URL.Query().Get("delete_file"))
-	deleteFile := deleteFileParam == "true" || deleteFileParam == "1" || deleteFileParam == ""
+	deleteFile := deleteFileParam == "true" || deleteFileParam == "1"
 
 	configuredPath := s.editor.GetRuleProviderPath(name)
 
@@ -191,25 +199,15 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if deleteFile {
-		if configuredPath != "" {
-			fullPath := configuredPath
-			if !filepath.IsAbs(fullPath) {
-				fullPath = filepath.Join(s.rulesDir, filepath.Base(configuredPath))
-			}
-			if err := os.Remove(fullPath); err == nil {
-				log.Printf("[Disk] Removed %s", fullPath)
-			}
-		}
-		fallbackPath := filepath.Join(s.rulesDir, name+".mrs")
-		if _, err := os.Stat(fallbackPath); err == nil {
-			_ = os.Remove(fallbackPath)
-		}
-	}
-
 	if err := s.editor.Save(); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save config: %v", err))
 		return
+	}
+	if deleteFile {
+		if configuredPath == "" { configuredPath = name + ".mrs" }
+		if fullPath, err := s.safeRulePath(configuredPath); err == nil {
+			if err := os.Remove(fullPath); err == nil { log.Printf("[Disk] Removed %s", fullPath) }
+		}
 	}
 
 	s.asyncReloadMihomo("delete rule " + name)

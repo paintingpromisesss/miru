@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -29,6 +28,7 @@ func (s *Server) handleRulePreview(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	rawURL := strings.TrimSpace(r.URL.Query().Get("url"))
 
+	if name != "" && !validRuleName(name) { writeError(w,http.StatusBadRequest,"Invalid rule name"); return }
 	var data []byte
 	var source string
 
@@ -36,14 +36,8 @@ func (s *Server) handleRulePreview(w http.ResponseWriter, r *http.Request) {
 		for _, p := range s.editor.GetRuleProviders() {
 			if p.Name == name {
 				configuredPath := p.Path
-				var fullPath string
-				if filepath.IsAbs(configuredPath) {
-					fullPath = configuredPath
-				} else {
-					fullPath = filepath.Join(s.rulesDir, filepath.Base(configuredPath))
-				}
-
-				if b, err := os.ReadFile(fullPath); err == nil && len(b) > 0 {
+				fullPath, pathErr := s.safeRulePath(configuredPath)
+				if b, err := readPreviewFile(fullPath, pathErr); err == nil && len(b) > 0 {
 					data = b
 					source = "local"
 				} else if rawURL == "" && p.URL != "" {
@@ -56,7 +50,7 @@ func (s *Server) handleRulePreview(w http.ResponseWriter, r *http.Request) {
 		if len(data) == 0 {
 			for _, ext := range []string{".mrs", ".yaml", ".txt", ""} {
 				candidate := filepath.Join(s.rulesDir, name+ext)
-				if b, err := os.ReadFile(candidate); err == nil && len(b) > 0 {
+				if b, err := s.readSafePreview(candidate); err == nil && len(b) > 0 {
 					data = b
 					source = "local"
 					break
@@ -68,7 +62,7 @@ func (s *Server) handleRulePreview(w http.ResponseWriter, r *http.Request) {
 			urlBase := filepath.Base(strings.Split(rawURL, "?")[0])
 			if urlBase != "" && urlBase != "." && urlBase != "/" {
 				candidate := filepath.Join(s.rulesDir, urlBase)
-				if b, err := os.ReadFile(candidate); err == nil && len(b) > 0 {
+				if b, err := s.readSafePreview(candidate); err == nil && len(b) > 0 {
 					data = b
 					source = "local"
 				}
@@ -102,12 +96,13 @@ func (s *Server) handleRulePreview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		b, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+		b, err := io.ReadAll(io.LimitReader(resp.Body, maxPreviewBytes+1))
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to read remote rule: %v", err))
 			return
 		}
 
+		if len(b) > maxPreviewBytes { writeError(w,http.StatusRequestEntityTooLarge,"Ruleset exceeds preview limit"); return }
 		data = b
 		source = "remote"
 	}

@@ -174,7 +174,32 @@ func (e *YAMLEditor) UpdateProxyGroup(name string, entry ProxyGroupEntry) error 
 		return fmt.Errorf("unmarshal updated proxy group node: %w", err)
 	}
 
-	section.Content[idx] = docNode.Content[0]
+	// Preserve fields not represented by the UI (include-all-proxies,
+	// empty-fallback, timeout, etc.) and comments on existing keys.
+	old := section.Content[idx]
+	next := docNode.Content[0]
+	known := map[string]bool{"name":true,"type":true,"proxies":true,"use":true,"url":true,"interval":true,"tolerance":true,"lazy":true,"strategy":true,"disable-udp":true,"filter":true,"exclude-filter":true}
+	updates := map[string]*yaml.Node{}
+	for i := 0; i+1 < len(next.Content); i += 2 {
+		updates[next.Content[i].Value] = next.Content[i+1]
+	}
+	var merged []*yaml.Node
+	for i := 0; i+1 < len(old.Content); i += 2 {
+		k, v := old.Content[i], old.Content[i+1]
+		if !known[k.Value] {
+			merged = append(merged,k,v)
+		} else if replacement, ok := updates[k.Value]; ok {
+			replacement.HeadComment, replacement.LineComment, replacement.FootComment = v.HeadComment, v.LineComment, v.FootComment
+			merged = append(merged,k,replacement)
+			delete(updates,k.Value)
+		}
+	}
+	for i := 0; i+1 < len(next.Content); i += 2 {
+		if v, ok := updates[next.Content[i].Value]; ok {
+			merged = append(merged,next.Content[i],v)
+		}
+	}
+	old.Content = merged
 	return nil
 }
 

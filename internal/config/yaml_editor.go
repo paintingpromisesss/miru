@@ -65,17 +65,25 @@ func (e *YAMLEditor) Save() error {
 	dir := filepath.Dir(e.path)
 	tmpFile, err := os.CreateTemp(dir, "mihomo-cfg-*.tmp")
 	if err != nil {
-		if writeErr := os.WriteFile(e.path, buf.Bytes(), 0644); writeErr != nil {
-			return fmt.Errorf("write config fallback: %w", writeErr)
-		}
-		return nil
+		return fmt.Errorf("create temp config: %w", err)
 	}
 	tmpName := tmpFile.Name()
+	defer os.Remove(tmpName)
+	if info, err := os.Stat(e.path); err == nil {
+		if err := tmpFile.Chmod(info.Mode().Perm() & 0600); err != nil {
+			tmpFile.Close()
+			return fmt.Errorf("secure temp config: %w", err)
+		}
+	}
 
 	if _, err := tmpFile.Write(buf.Bytes()); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpName)
 		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("sync temp config: %w", err)
 	}
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpName)
@@ -83,11 +91,7 @@ func (e *YAMLEditor) Save() error {
 	}
 
 	if err := os.Rename(tmpName, e.path); err != nil {
-		if writeErr := os.WriteFile(e.path, buf.Bytes(), 0644); writeErr != nil {
-			os.Remove(tmpName)
-			return fmt.Errorf("rename/write config: %w", writeErr)
-		}
-		os.Remove(tmpName)
+		return fmt.Errorf("replace config atomically: %w", err)
 	}
 
 	return nil

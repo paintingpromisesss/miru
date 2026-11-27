@@ -2691,6 +2691,7 @@ function openAddRuleModal(preset = null) {
   const initialName = preset ? (preset.category === 'geoip' ? 'geoip-' + preset.name : preset.name) : '';
   const initialUrl = preset ? preset.url : '';
   const initialBehavior = preset ? preset.behavior : 'domain';
+  const initialFormat = preset ? (preset.format || (preset.url.endsWith('.txt') ? 'text' : 'mrs')) : 'mrs';
 
   modal.innerHTML = `
     <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-lg w-full space-y-5 shadow-2xl relative" onclick="event.stopPropagation()">
@@ -2726,8 +2727,9 @@ function openAddRuleModal(preset = null) {
           <div>
             <label class="block text-zinc-300 mb-1 font-medium">Format</label>
             <select id="modal-format" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 focus:border-zinc-500 focus:outline-none">
-              <option value="mrs" selected>mrs (binary)</option>
-              <option value="yaml">yaml</option>
+              <option value="mrs" ${initialFormat === 'mrs' ? 'selected' : ''}>mrs (binary)</option>
+              <option value="text" ${initialFormat === 'text' ? 'selected' : ''}>text</option>
+              <option value="yaml" ${initialFormat === 'yaml' ? 'selected' : ''}>yaml</option>
             </select>
           </div>
         </div>
@@ -2904,7 +2906,8 @@ function openEditRuleModal(name) {
                 <label class="block text-zinc-400 mb-1 font-mono text-[11px]">Format</label>
                 <select id="modal-edit-format" class="h-8 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-200 focus:border-zinc-500 focus:outline-none">
                   <option value="mrs" ${currentFormat === 'mrs' ? 'selected' : ''}>mrs (binary)</option>
-                  <option value="yaml" ${currentFormat === 'yaml' ? 'selected' : ''}>yaml</option>
+                  <option value="text" ${currentFormat === 'text' ? 'selected' : ''}>text</option>
+              <option value="yaml" ${currentFormat === 'yaml' ? 'selected' : ''}>yaml</option>
                 </select>
               </div>
             </div>

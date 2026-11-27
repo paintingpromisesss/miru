@@ -68,7 +68,7 @@ func (c *Catalog) fetchTree() ([]GitHubFile, error) {
 		defer resp.Body.Close()
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read response body: %w", err)
 	}
@@ -93,11 +93,12 @@ func (c *Catalog) fetchTree() ([]GitHubFile, error) {
 		return nil, fmt.Errorf("parse tree json: %w", err)
 	}
 
+	if tree.Truncated { return nil, fmt.Errorf("GitHub tree is truncated; refusing partial catalog") }
 	rawBase := c.BaseURL()
 	var files []GitHubFile
 
 	for _, item := range tree.Tree {
-		if item.Type == "blob" && strings.HasSuffix(item.Path, ".mrs") {
+		if item.Type == "blob" && (strings.HasSuffix(item.Path, ".mrs") || strings.HasSuffix(item.Path, "-classical.txt")) {
 			fullPath := pathPrefix + item.Path
 			lowerPath := strings.ToLower(fullPath)
 
@@ -117,13 +118,17 @@ func (c *Catalog) fetchTree() ([]GitHubFile, error) {
 			}
 
 			base := path.Base(item.Path)
-			name := strings.TrimSuffix(base, ".mrs")
+			name := strings.TrimSuffix(strings.TrimSuffix(base, ".mrs"), ".txt")
+			format := "mrs"
+			if strings.HasSuffix(base, "-ipcidr.mrs") { behavior = "ipcidr" }
+			if strings.HasSuffix(base, "-classical.txt") { behavior, format = "classical", "text" }
 
 			files = append(files, GitHubFile{
 				Name:     name,
 				Path:     fullPath,
 				Category: category,
 				Behavior: behavior,
+				Format: format,
 				Size:     item.Size,
 				URL:      rawBase + fullPath,
 			})

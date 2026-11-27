@@ -17,6 +17,7 @@ type CatalogItemResponse struct {
 	Path        string `json:"path"`
 	Category    string `json:"category"`
 	Behavior    string `json:"behavior"`
+	Format string `json:"format,omitempty"`
 	Size        int    `json:"size"`
 	URL         string `json:"url"`
 	Applied     bool   `json:"applied"`
@@ -145,6 +146,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			Path:        f.Path,
 			Category:    f.Category,
 			Behavior:    f.Behavior,
+			Format: f.Format,
 			Size:        f.Size,
 			URL:         f.URL,
 			Applied:     isApplied,
