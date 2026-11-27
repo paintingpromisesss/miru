@@ -22,6 +22,8 @@ type CatalogItemResponse struct {
 	Size        int    `json:"size"`
 	URL         string `json:"url"`
 	Applied     bool   `json:"applied"`
+	Registered bool `json:"registered"`
+	ProviderName string `json:"provider_name,omitempty"`
 	BlockQUIC   bool   `json:"block_quic"`
 	Downloaded  bool   `json:"downloaded"`
 	HasDiff     bool   `json:"has_diff"`

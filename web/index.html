@@ -758,6 +758,7 @@ function updateCatalogTable() {
             <button data-add-path="${escapeHtml(item.path)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded transition-colors shadow-sm font-semibold">
               Add Rule
             </button>
+            ${item.registered ? `<button data-remove-name="${escapeHtml(item.provider_name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">Remove</button>` : ''}
           `}
         </td>
       </tr>
@@ -2649,7 +2650,7 @@ function confirmDeleteRawRule(index, ruleStr) {
       </div>
       <p class="text-xs font-mono text-zinc-300 bg-zinc-900 p-2 rounded border border-zinc-800 break-all">${escapeHtml(ruleStr)}</p>
       <p class="text-xs text-zinc-400 leading-relaxed">
-        Are you sure you want to remove this rule line from <code>config.yaml</code>?
+        Are you sure you want to remove this rule line? Registered providers and cached files are kept. Use Remove in the rules catalog to unregister them as well.
       </p>
       <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
         <button id="modal-del-raw-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
@@ -3025,7 +3026,7 @@ function confirmDeleteRule(name) {
       </div>
 
       <p class="text-xs text-zinc-400">
-        Removes the <code>RULE-SET</code> entry from rules and unregisters the provider from <code>config.yaml</code>.
+        Removes the <code>RULE-SET</code> entry and unregisters the provider from the editable configuration.
       </p>
 
       <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer bg-zinc-900 p-2.5 rounded-md border border-zinc-800">

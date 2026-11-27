@@ -45,3 +45,26 @@ func TestNikkiCustomDomains(t *testing.T){
 	b,_:=os.ReadFile(p);str:=string(b)
 	if strings.Count(str,"DOMAIN-SUFFIX,example.org,VPN-NON-RU")!=1||!strings.Contains(str,"DOMAIN-SUFFIX,example.com,VPN-NON-RU")||strings.Index(str,"DOMAIN-SUFFIX")>strings.Index(str,"MATCH,DIRECT"){t.Fatal(str)}
 }
+
+func TestNikkiDeleteProviderAndCache(t *testing.T) {
+	dir:=t.TempDir()
+	p:=filepath.Join(dir,"mixin.yaml")
+	rd:=filepath.Join(dir,"ruleset")
+	if err:=os.Mkdir(rd,0700);err!=nil{t.Fatal(err)}
+	initial:="nikki-rules:\n  - RULE-SET,spotify-domain,VPN-NON-RU\n  - MATCH,DIRECT\nrule-providers:\n  spotify-domain:\n    type: http\n    behavior: domain\n    format: mrs\n    path: ./ruleset/spotify-domain.mrs\n    url: https://example.org/spotify-domain.mrs\n"
+	if err:=os.WriteFile(p,[]byte(initial),0600);err!=nil{t.Fatal(err)}
+	cache:=filepath.Join(rd,"spotify-domain.mrs")
+	if err:=os.WriteFile(cache,[]byte("cache"),0600);err!=nil{t.Fatal(err)}
+	e,err:=config.NewModeEditor(p,"nikki");if err!=nil{t.Fatal(err)}
+	s:=New(Config{Editor:e,ConfigPath:p,RulesDir:rd,Mode:"nikki",Apply:func()error{return nil}})
+	m:=http.NewServeMux();s.RegisterRoutes(m)
+	w:=httptest.NewRecorder();m.ServeHTTP(w,httptest.NewRequest("DELETE","/api/raw-rules?index=0",nil))
+	if w.Code!=200{t.Fatal(w.Code,w.Body.String())}
+	b,_:=os.ReadFile(p)
+	if strings.Contains(string(b),"RULE-SET,spotify-domain")||!strings.Contains(string(b),"spotify-domain:"){t.Fatal(string(b))}
+	w=httptest.NewRecorder();m.ServeHTTP(w,httptest.NewRequest("DELETE","/api/rules?name=spotify-domain&delete_file=true",nil))
+	if w.Code!=200{t.Fatal(w.Code,w.Body.String())}
+	b,_=os.ReadFile(p)
+	if strings.Contains(string(b),"spotify-domain")||!strings.Contains(string(b),"MATCH,DIRECT"){t.Fatal(string(b))}
+	if _,err:=os.Stat(cache);!os.IsNotExist(err){t.Fatalf("cache remains: %v",err)}
+}
