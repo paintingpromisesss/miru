@@ -23,7 +23,7 @@ func(s *Server) routingTargets() []string {
 			for _,v:=range effective.GetDiscoveredProxies(){if !slices.Contains(targets,v){targets=append(targets,v)}}
 		}
 	}
-	return targets
+	return slices.DeleteFunc(targets,func(v string)bool{return strings.ContainsAny(v,",\r\n")})
 }
 
 // Serialize edits and reload, and do not return a success response before
@@ -47,7 +47,8 @@ func(s *Server) guard(next http.HandlerFunc)http.HandlerFunc{
 		next(rec,r)
 		after,readErr:=os.ReadFile(s.configPath)
 		if rec.Code>=400 || readErr!=nil {
-			if err=s.editor.Restore(before);err!=nil{writeError(w,500,"Restore failed: "+err.Error());return}
+			if readErr==nil && bytes.Equal(before,after) {err=s.editor.ReloadFromDisk()} else {err=s.editor.Restore(before)}
+			if err!=nil{writeError(w,500,"Restore failed: "+err.Error());return}
 			if readErr!=nil{writeError(w,500,readErr.Error());return}
 		}else if !bytes.Equal(before,after){
 			if err=config.AtomicBytes(s.configPath+".miru.bak",before);err==nil{err=s.ReloadMihomo()}
@@ -75,6 +76,10 @@ func(s *Server) restartNikki()error{
 				want:=s.editor.GetRules();got:=eff.GetRules()
 				if len(got)<len(want)||!slices.Equal(got[:len(want)],want){ok=false}
 				for _,g:=range s.editor.GetProxyGroupEntries(){if !slices.Contains(eff.GetProxyGroups(),g.Name){ok=false}}
+				for _,p:=range s.editor.GetRuleProviders(){
+					found:=false;for _,actual:=range eff.GetRuleProviders(){if actual.Name==p.Name && actual.URL==p.URL && actual.Behavior==p.Behavior && actual.Format==p.Format {found=true;break}}
+					if !found{ok=false}
+				}
 				if ok{return nil}
 			}
 		}

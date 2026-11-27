@@ -18,6 +18,7 @@ type CatalogItemResponse struct {
 	Category    string `json:"category"`
 	Behavior    string `json:"behavior"`
 	Format string `json:"format,omitempty"`
+	RuleCount int `json:"rule_count,omitempty"`
 	Size        int    `json:"size"`
 	URL         string `json:"url"`
 	Applied     bool   `json:"applied"`
@@ -121,6 +122,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		var hasDiff bool
 		var diskSize int64
 
+		if matchedProv!=nil && matchedProv.Path!="" {if p,err:=s.safeRulePath(matchedProv.Path);err==nil {if info,err:=os.Stat(p);err==nil&&info.Mode().IsRegular(){downloaded=true;diskSize=info.Size();hasDiff=f.Size>0&&diskSize!=int64(f.Size)}}}
 		candidates := make([]string, 0, 5)
 		if matchedProv != nil {
 			if matchedProv.Path != "" {
@@ -137,6 +139,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, cand := range candidates {
+			if downloaded {break}
 			if ok, sz, diff := checkDiskCandidate(cand, diskFiles, f.Size); ok {
 				downloaded = true
 				diskSize = sz
@@ -152,6 +155,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			Category:    f.Category,
 			Behavior:    f.Behavior,
 			Format: f.Format,
+			RuleCount:f.RuleCount,
 			Size:        f.Size,
 			URL:         f.URL,
 			Applied:     isApplied,

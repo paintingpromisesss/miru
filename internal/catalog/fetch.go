@@ -153,7 +153,7 @@ func (c *Catalog) fetchTachyon() ([]GitHubFile,error) {
 	for _,cat:=range manifest.Categories {for behavior,p:=range cat.Providers {
 		if (behavior!="domain" && behavior!="ipcidr" && behavior!="classical") || p.Rules<=0 || path.Base(p.File)!=p.File {continue}
 		format:="mrs";if behavior=="classical" {format="text"}
-		out=append(out,GitHubFile{Name:strings.TrimSuffix(strings.TrimSuffix(p.File,".mrs"),".txt"),Path:p.File,Category:"tachyon",Behavior:behavior,Format:format,URL:c.BaseURL()+p.File})
+		out=append(out,GitHubFile{Name:strings.TrimSuffix(strings.TrimSuffix(p.File,".mrs"),".txt"),Path:p.File,Category:"tachyon",Behavior:behavior,Format:format,RuleCount:p.Rules,URL:c.BaseURL()+p.File})
 	}}
 	if len(out)==0 {return nil,fmt.Errorf("empty Tachyon manifest")}
 	sort.Slice(out,func(i,j int)bool{return out[i].Name<out[j].Name})

@@ -69,6 +69,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/proxy-groups", s.guard(s.handleProxyGroups))
 	mux.HandleFunc("/api/proxy-providers", s.guard(s.handleProxyProviders))
 	mux.HandleFunc("/api/raw-rules", s.guard(s.handleRawRules))
+	mux.HandleFunc("/api/domains",s.guard(s.handleDomains))
 	mux.HandleFunc("/api/raw-rules/move", s.guard(s.handleMoveRawRule))
 	mux.HandleFunc("/api/quic/global", s.guard(s.handleGlobalQuic))
 	mux.HandleFunc("/api/reload", s.guard(s.handleReload))

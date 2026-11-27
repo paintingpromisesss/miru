@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"miru/internal/mrs"
 )
@@ -83,7 +82,7 @@ func (s *Server) handleRulePreview(w http.ResponseWriter, r *http.Request) {
 		}
 		req.Header.Set("User-Agent", "Miru/1.0")
 
-		client := &http.Client{Timeout: 20 * time.Second}
+		client := publicPreviewClient()
 		resp, err := client.Do(req)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, fmt.Sprintf("Failed to fetch rule from remote: %v", err))

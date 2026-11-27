@@ -212,3 +212,5 @@ MIRU_PASSWORD='choose-a-strong-password' ./miru -mode nikki -bind 192.168.0.1 -p
 HTTP Basic login: miru / MIRU_PASSWORD. Use a trusted LAN or SSH tunnel; do not expose this HTTP service publicly. Default bind is loopback, port 8787 (avoids Mihomo's 8080). Standalone mode is the default and uses the Mihomo controller reload. A .miru.bak backup is written before applying an edit.
 
 Catalog picker offers Tachyon (reads the raw manifest) and MetaCubeX. Default catalog in Nikki is Tachyon. Custom URL rulesets and the Settings raw rules editor can route individual domains to any discovered group or node. Only selected providers are registered. Nikki's inherited subscription rules are not edited by Miru.
+
+The **Custom domains** button adds one or more DOMAIN-SUFFIX / DOMAIN rules in one transaction. ARM64 test artifacts are available from successful CI runs. The test binary can be started directly via SSH before changing the installed service. Preview downloads only public HTTP(S) destinations.

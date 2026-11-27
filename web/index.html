@@ -60,7 +60,7 @@ tailwind.config = {
       <div class="w-7 h-7 rounded-md bg-zinc-100 text-zinc-950 flex items-center justify-center font-bold text-sm tracking-tighter shadow-sm">
         M
       </div>
-      <span class="font-semibold text-sm tracking-tight text-zinc-100 mr-0.5">Miru</span>
+      <span class="font-semibold text-sm tracking-tight text-zinc-100 mr-0.5">Miru</span><span id="miru-mode" class="text-xs text-zinc-500"></span>
       <select id="catalog-source" onchange="state.selectedCategories?.clear(); state.selectedBehaviors?.clear(); fetchCatalog(false)" class="bg-zinc-900 text-zinc-200 rounded px-2 py-1 text-xs"><option value="default">Default catalog</option><option value="tachyon">Tachyon</option><option value="metacubex">MetaCubeX</option></select>
 
       <div id="card-mihomo-status" class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs cursor-pointer hover:border-zinc-700 transition-all duration-300 ease-out select-none group shadow-sm" title="Click to ping Mihomo API">
@@ -77,6 +77,7 @@ tailwind.config = {
         <span id="global-quic-text">Block All QUIC</span>
       </button>
 
+      <button id="btn-custom-domains" class="h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 text-zinc-200 rounded-md">Custom domains</button>
       <button id="btn-custom-rule" class="h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded-md transition-colors flex items-center gap-1.5 shadow-sm">
         <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         Custom Ruleset
@@ -738,7 +739,7 @@ function updateCatalogTable() {
           }">${escapeHtml(item.category)}</span>
         </td>
         <td class="py-2.5 px-4 font-mono text-zinc-400">${escapeHtml(item.behavior)}</td>
-        <td class="py-2.5 px-4 font-mono text-zinc-400">${formatBytes(item.size)}</td>
+        <td class="py-2.5 px-4 font-mono text-zinc-400">${item.size ? formatBytes(item.size) : (item.rule_count ? item.rule_count + " rules" : "—")}</td>
         <td class="py-2.5 px-4 text-right whitespace-nowrap">
           <button data-preview-rule="${escapeHtml(item.name)}" data-preview-url="${escapeHtml(item.url)}" title="Preview ruleset contents" class="h-7 px-2 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors mr-1 inline-flex items-center gap-1">
             <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
@@ -2025,7 +2026,7 @@ function openProxyGroupModal(groupName = null) {
       selectedUse.push(cb.dataset.provChk);
     });
 
-    if (selectedProxies.length === 0 && selectedUse.length === 0) {
+    if (selectedProxies.length === 0 && selectedUse.length === 0 && !document.getElementById("miru-include-all-proxies")?.checked && !document.getElementById("miru-include-all-providers")?.checked) {
       showToast('At least one proxy or proxy-provider must be selected', 'warning');
       return;
     }
@@ -2683,6 +2684,34 @@ function confirmDeleteRawRule(index, ruleStr) {
   };
 }
 
+
+function openDomainsModal() {
+  if (!state.local) { showToast('Load local configuration first','error'); return; }
+  const targets = state.local.routing_targets || state.local.proxy_groups || ['DIRECT'];
+  const modal = document.getElementById('modal-container');
+  modal.innerHTML = `
+    <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-lg w-full space-y-4" onclick="event.stopPropagation()">
+      <h3 class="text-sm font-semibold">Route custom domains</h3>
+      <p class="text-xs text-zinc-400">One domain per line. No protocol or path. Rules are inserted before MATCH.</p>
+      <textarea id="custom-domains" rows="7" placeholder="example.com" class="w-full bg-zinc-900 rounded border p-2 text-sm font-mono"></textarea>
+      <label class="block text-xs">Target <select id="custom-target" class="bg-zinc-900 border rounded p-2 w-full">${targets.map(t=>`<option value="${escapeHtml(t)}" ${t==='VPN-NON-RU'?'selected':''}>${escapeHtml(t)}</option>`).join('')}</select></label>
+      <label class="text-xs"><input id="custom-exact" type="checkbox"> Exact domain only (otherwise include subdomains)</label>
+      <div class="flex justify-end gap-2"><button id="custom-cancel" class="p-2 text-xs">Cancel</button><button id="custom-save" class="bg-zinc-100 text-zinc-950 rounded p-2 text-xs">Apply</button></div>
+    </div>`;
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+  const close = () => {modal.classList.add('hidden');modal.classList.remove('flex');modal.innerHTML='';};
+  modal.onclick=close;
+  document.getElementById('custom-cancel').onclick=close;
+  document.getElementById('custom-save').onclick=async()=>{
+    const btn=document.getElementById('custom-save');btn.disabled=true;
+    try {
+      const domains=document.getElementById('custom-domains').value.split(/[\r\n,\s]+/).filter(Boolean);
+      await checkedFetch('/api/domains',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domains,proxy_group:document.getElementById('custom-target').value,exact:document.getElementById('custom-exact').checked})});
+      close();showToast('Domains applied','success');await fetchLocal();render();
+    } catch(e){showToast(e.message,'error');btn.disabled=false;}
+  };
+}
+document.getElementById('btn-custom-domains').addEventListener('click',openDomainsModal);
 
 function openAddRuleModal(preset = null) {
   if (!state.local || (state.local.proxy_groups || []).length === 0) {

@@ -32,3 +32,16 @@ func TestNikkiEditAndRollback(t *testing.T){
 	if w:=send("broken");w.Code!=502{t.Fatal(w.Code,w.Body.String())}
 	restored,_:=os.ReadFile(p);if string(restored)!=string(b){t.Fatal("rollback did not restore exact file")}
 }
+
+func TestNikkiCustomDomains(t *testing.T){
+	p:=filepath.Join(t.TempDir(),"mixin.yaml")
+	os.WriteFile(p,[]byte("nikki-proxy-groups:\n  - name: VPN-NON-RU\n    type: select\nnikki-rules:\n  - MATCH,DIRECT\n"),0600)
+	e,err:=config.NewModeEditor(p,"nikki");if err!=nil{t.Fatal(err)}
+	s:=New(Config{Editor:e,Mode:"nikki",ConfigPath:p,Apply:func()error{return nil}})
+	m:=http.NewServeMux();s.RegisterRoutes(m)
+	r:=httptest.NewRequest("POST","/api/domains",strings.NewReader("{\"domains\":[\"example.org\",\"+.Example.com\",\"example.org\"],\"proxy_group\":\"VPN-NON-RU\"}"))
+	w:=httptest.NewRecorder();m.ServeHTTP(w,r)
+	if w.Code!=200{t.Fatal(w.Code,w.Body.String())}
+	b,_:=os.ReadFile(p);str:=string(b)
+	if strings.Count(str,"DOMAIN-SUFFIX,example.org,VPN-NON-RU")!=1||!strings.Contains(str,"DOMAIN-SUFFIX,example.com,VPN-NON-RU")||strings.Index(str,"DOMAIN-SUFFIX")>strings.Index(str,"MATCH,DIRECT"){t.Fatal(str)}
+}

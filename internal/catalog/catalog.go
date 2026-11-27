@@ -15,6 +15,7 @@ type GitHubFile struct {
 	Category string `json:"category"`
 	Behavior string `json:"behavior"`
 	Format string `json:"format,omitempty"`
+	RuleCount int `json:"rule_count,omitempty"`
 	Size     int    `json:"size"`
 	URL      string `json:"url"`
 }
