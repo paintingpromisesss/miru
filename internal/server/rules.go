@@ -101,17 +101,27 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 		Interval: req.Interval,
 	}
 
-	if err := s.editor.AddRuleProvider(provEntry); err != nil {
+	// A provider may already be registered without a routing directive.
+	// Reuse only an exact matching provider, never overwrite unrelated lists.
+	reuse := false
+	for _, p := range s.editor.GetRuleProviders() {
+		if p.Name != req.Name { continue }
+		if p.URL != req.URL || p.Behavior != req.Behavior || p.Format != req.Format {
+			writeError(w,http.StatusConflict,"Rule provider name belongs to a different ruleset");return
+		}
+		reuse=true
+	}
+	if !reuse { if err := s.editor.AddRuleProvider(provEntry); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to add rule-provider: %v", err))
 		return
-	}
+	} }
 
 	if err := s.editor.AddRule(req.Name, req.ProxyGroup); err != nil {
-		_ = s.editor.RemoveRuleProvider(req.Name)
+		if !reuse { _ = s.editor.RemoveRuleProvider(req.Name) }
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to add rule line: %v", err))
 		return
 	}

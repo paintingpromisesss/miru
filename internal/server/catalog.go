@@ -29,7 +29,7 @@ type CatalogItemResponse struct {
 }
 
 func cleanURL(u string) string {
-	u = strings.TrimSpace(strings.ToLower(u))
+	u = strings.TrimSpace(u)
 	u = strings.TrimSuffix(u, "/")
 	return u
 }
@@ -61,13 +61,8 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	activeNames := s.editor.GetRuleSetNames()
 	providers := s.editor.GetRuleProviders()
 
-	appliedSet := make(map[string]string, len(activeNames)+len(providers))
-	for _, name := range activeNames {
-		appliedSet[strings.ToLower(name)] = name
-	}
-	for _, prov := range providers {
-		appliedSet[strings.ToLower(prov.Name)] = prov.Name
-	}
+	activeSet := make(map[string]bool, len(activeNames))
+	for _, name := range activeNames { activeSet[name] = true }
 
 	diskFiles := make(map[string]int64)
 	if entries, err := os.ReadDir(s.rulesDir); err == nil {
@@ -83,39 +78,26 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	items := make([]CatalogItemResponse, len(files))
 	for i, f := range files {
 		cleanName := f.Name
-		appliedName, isApplied := appliedSet[strings.ToLower(cleanName)]
-		if !isApplied && f.Category != "" {
-			appliedName, isApplied = appliedSet[strings.ToLower(f.Category+"-"+cleanName)]
-		}
-
+		// Identify the provider, not just a same-named catalog item.
+		// A registered provider (or an existing cache) is not an active route.
 		var matchedProv *config.RuleProviderEntry
-		if isApplied {
-			for _, prov := range providers {
-				if strings.EqualFold(prov.Name, appliedName) {
-					p := prov
-					matchedProv = &p
-					break
-				}
+		for _, prov := range providers {
+			if f.Behavior != "" && prov.Behavior != f.Behavior { continue }
+			matches := f.URL != "" && prov.URL != "" && cleanURL(f.URL) == cleanURL(prov.URL)
+			if !matches && (f.URL == "" || prov.URL == "") {
+				matches = prov.Name == f.Name || prov.Name == f.Category+"-"+f.Name
 			}
-		} else if f.URL != "" {
-			cleanFURL := cleanURL(f.URL)
-			cleanFPath := strings.ToLower(f.Path)
-			cleanFName := strings.ToLower(f.Name) + ".mrs"
-			for _, prov := range providers {
-				if prov.URL == "" {
-					continue
-				}
-				cleanPURL := cleanURL(prov.URL)
-				if cleanPURL == cleanFURL ||
-					strings.HasSuffix(cleanPURL, "/"+cleanFPath) ||
-					strings.HasSuffix(cleanPURL, "/"+cleanFName) {
-					isApplied = true
-					appliedName = prov.Name
-					p := prov
-					matchedProv = &p
-					break
-				}
+			if !matches { continue }
+			if matchedProv == nil || (activeSet[prov.Name] && !activeSet[matchedProv.Name]) {
+				p:=prov; matchedProv=&p
 			}
+		}
+		providerName, appliedName := "", ""
+		isApplied := false
+		if matchedProv != nil {
+			providerName=matchedProv.Name
+			isApplied=activeSet[providerName]
+			if isApplied { appliedName=providerName }
 		}
 
 		var downloaded bool
@@ -159,6 +141,8 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			Size:        f.Size,
 			URL:         f.URL,
 			Applied:     isApplied,
+			Registered: matchedProv != nil,
+			ProviderName: providerName,
 			BlockQUIC:   isApplied && s.editor.HasQuicRule(appliedName),
 			Downloaded:  downloaded,
 			HasDiff:     hasDiff,

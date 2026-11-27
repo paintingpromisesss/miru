@@ -289,6 +289,7 @@ async function fetchLocal() {
   try {
     const data = await API.getLocal();
     state.local = data;
+    document.getElementById("miru-mode").textContent = data.mode || "standalone";
     updateStats();
   } catch (err) {
     showToast('Failed to load local config: ' + err.message, 'error');
@@ -725,6 +726,7 @@ function updateCatalogTable() {
                 </span>
               `
             ) : ''}
+            ${item.registered && !item.applied ? `<span class="text-[10px] text-zinc-400">Registered · not routed</span>` : ''}
             ${item.block_quic ? `
               <span class="inline-flex items-center text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC</span>
             ` : ''}
@@ -2727,7 +2729,7 @@ function openAddRuleModal(preset = null) {
 
   const modal = document.getElementById('modal-container');
   const isCustom = !preset;
-  const initialName = preset ? (preset.category === 'geoip' ? 'geoip-' + preset.name : preset.name) : '';
+  const initialName = preset ? (preset.provider_name || (preset.category === 'geoip' ? 'geoip-' + preset.name : preset.name)) : '';
   const initialUrl = preset ? preset.url : '';
   const initialBehavior = preset ? preset.behavior : 'domain';
   const initialFormat = preset ? (preset.format || (preset.url.endsWith('.txt') ? 'text' : 'mrs')) : 'mrs';
