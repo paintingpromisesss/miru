@@ -22,6 +22,7 @@ jobs:
           npx --yes --package=tailwindcss@3.4.17 tailwindcss -i web/tailwind.css -o /tmp/miru-tailwind.css --content web/index.html --minify
           node web/bundle-css.cjs /tmp/miru-tailwind.css
       - run: node web/check-ui.cjs
+      - run: sh -n scripts/install.sh && sh -n scripts/miru.init
       - run: go test ./...
       - run: go vet ./...
       - run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/miru-arm64 ./cmd/miru
