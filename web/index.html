@@ -61,6 +61,7 @@ tailwind.config = {
         M
       </div>
       <span class="font-semibold text-sm tracking-tight text-zinc-100 mr-0.5">Miru</span>
+      <select id="catalog-source" onchange="state.selectedCategories?.clear(); state.selectedBehaviors?.clear(); fetchCatalog(false)" class="bg-zinc-900 text-zinc-200 rounded px-2 py-1 text-xs"><option value="default">Default catalog</option><option value="tachyon">Tachyon</option><option value="metacubex">MetaCubeX</option></select>
 
       <div id="card-mihomo-status" class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs cursor-pointer hover:border-zinc-700 transition-all duration-300 ease-out select-none group shadow-sm" title="Click to ping Mihomo API">
         <span id="stat-mihomo-dot" class="w-2 h-2 rounded-full bg-zinc-500 animate-pulse flex-shrink-0 transition-colors duration-200"></span>
@@ -78,7 +79,7 @@ tailwind.config = {
 
       <button id="btn-custom-rule" class="h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded-md transition-colors flex items-center gap-1.5 shadow-sm">
         <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        Custom MRS
+        Custom Ruleset
       </button>
 
       <button id="btn-reload-mihomo" class="h-8 px-3 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded-md transition-colors flex items-center gap-1.5 shadow-sm font-semibold">
@@ -115,73 +116,78 @@ tailwind.config = {
 <div id="modal-container" class="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4"></div>
 
 <script>
+async function checkedFetch(url, options) {
+  const r = await fetch(url, options);
+  if (!r.ok) { const data = await r.json().catch(() => ({})); throw new Error(data.error || `HTTP ${r.status}`); }
+  return r;
+}
 const API = {
-  getLocal: () => fetch('/api/local').then(r => r.json()),
-  getCatalog: (refresh = false) => fetch('/api/catalog' + (refresh ? '?action=refresh' : '')).then(r => r.json()),
-  addRule: (data) => fetch('/api/rules', {
+  getLocal: () => checkedFetch('/api/local').then(r => r.json()),
+  getCatalog: (refresh = false) => checkedFetch('/api/catalog?source=' + encodeURIComponent(document.getElementById('catalog-source').value) + (refresh ? '&action=refresh' : '')).then(r => r.json()),
+  addRule: (data) => checkedFetch('/api/rules', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   }),
-  editRule: (data) => fetch('/api/rules', {
+  editRule: (data) => checkedFetch('/api/rules', {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   }),
-  deleteRule: (name, deleteFile = true) => fetch(`/api/rules?name=${encodeURIComponent(name)}&delete_file=${deleteFile}`, {
+  deleteRule: (name, deleteFile = true) => checkedFetch(`/api/rules?name=${encodeURIComponent(name)}&delete_file=${deleteFile}`, {
     method: 'DELETE'
   }),
-  addProxyGroup: (data) => fetch('/api/proxy-groups', {
+  addProxyGroup: (data) => checkedFetch('/api/proxy-groups', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   }),
-  editProxyGroup: (data) => fetch('/api/proxy-groups', {
+  editProxyGroup: (data) => checkedFetch('/api/proxy-groups', {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   }),
-  deleteProxyGroup: (name) => fetch(`/api/proxy-groups?name=${encodeURIComponent(name)}`, {
+  deleteProxyGroup: (name) => checkedFetch(`/api/proxy-groups?name=${encodeURIComponent(name)}`, {
     method: 'DELETE'
   }),
-  addProxyProvider: (data) => fetch('/api/proxy-providers', {
+  addProxyProvider: (data) => checkedFetch('/api/proxy-providers', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   }),
-  editProxyProvider: (data) => fetch('/api/proxy-providers', {
+  editProxyProvider: (data) => checkedFetch('/api/proxy-providers', {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
   }),
-  deleteProxyProvider: (name) => fetch(`/api/proxy-providers?name=${encodeURIComponent(name)}`, {
+  deleteProxyProvider: (name) => checkedFetch(`/api/proxy-providers?name=${encodeURIComponent(name)}`, {
     method: 'DELETE'
   }),
-  addRawRule: (rule, index = -1) => fetch('/api/raw-rules', {
+  addRawRule: (rule, index = -1) => checkedFetch('/api/raw-rules', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ rule, index })
   }),
-  editRawRule: (index, rule) => fetch('/api/raw-rules', {
+  editRawRule: (index, rule) => checkedFetch('/api/raw-rules', {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ index, rule })
   }),
-  deleteRawRule: (index) => fetch(`/api/raw-rules?index=${index}`, {
+  deleteRawRule: (index) => checkedFetch(`/api/raw-rules?index=${index}`, {
     method: 'DELETE'
   }),
-  moveRawRule: (from, to) => fetch('/api/raw-rules/move', {
+  moveRawRule: (from, to) => checkedFetch('/api/raw-rules/move', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ from, to })
   }),
-  toggleGlobalQuic: (enabled) => fetch('/api/quic/global', {
+  toggleGlobalQuic: (enabled) => checkedFetch('/api/quic/global', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ enabled })
   }).then(r => r.json()),
-  reloadMihomo: () => fetch('/api/reload', { method: 'POST' }).then(r => r.json()),
-  getMihomoStatus: () => fetch('/api/mihomo/status').then(r => r.json()),
+  reloadMihomo: () => checkedFetch('/api/reload', { method: 'POST' }).then(r => r.json()),
+  getMihomoStatus: () => checkedFetch('/api/mihomo/status').then(r => r.json()),
   previewRule: (name, url) => {
     let q = [];
     if (name) q.push(`name=${encodeURIComponent(name)}`);
@@ -1826,6 +1832,8 @@ function openProxyGroupModal(groupName = null) {
   const currentDisableUdp = group && group.disable_udp !== undefined ? group.disable_udp : false;
   const currentFilter = group ? (group.filter || '') : '';
   const currentExcludeFilter = group ? (group.exclude_filter || '') : '';
+  const includeAllProxies = !!group?.include_all_proxies;
+  const includeAllProviders = !!group?.include_all_providers;
 
   const discovered = state.local.discovered_proxies || ['DIRECT', 'REJECT', 'GLOBAL'];
   const allProviders = state.local.proxy_providers || [];
@@ -1974,7 +1982,7 @@ function openProxyGroupModal(groupName = null) {
 
       <div class="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800">
         <button id="modal-group-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
-        <button id="modal-group-save" class="h-8 px-3 rounded-md text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 transition-colors">Save & Reload</button>
+        <label class="text-xs"><input type="checkbox" id="miru-include-all-proxies" ${includeAllProxies ? "checked" : ""}> All proxies</label><label class="text-xs"><input type="checkbox" id="miru-include-all-providers" ${includeAllProviders ? "checked" : ""}> All providers</label><button id="modal-group-save" class="h-8 px-3 rounded-md text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 transition-colors">Save & Reload</button>
       </div>
     </div>
   `;
@@ -2053,6 +2061,8 @@ function openProxyGroupModal(groupName = null) {
     const exclInput = document.getElementById('modal-group-exclude');
     if (exclInput && exclInput.value.trim()) payload.exclude_filter = exclInput.value.trim();
 
+    payload.include_all_proxies = document.getElementById("miru-include-all-proxies")?.checked || false;
+    payload.include_all_providers = document.getElementById("miru-include-all-providers")?.checked || false;
     const saveBtn = document.getElementById('modal-group-save');
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
@@ -2146,7 +2156,7 @@ function openProxyProviderModal(provName = null) {
   const currentHcLazy = hc.lazy !== undefined ? hc.lazy : true;
   const currentHcExpected = hc.expected_status !== undefined ? hc.expected_status : '';
 
-  const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+  const groups = state.local.routing_targets || state.local.proxy_groups || ['DIRECT', 'REJECT'];
 
   const modal = document.getElementById('modal-container');
   modal.innerHTML = `
@@ -2411,7 +2421,7 @@ function openRawRuleModal(index = -1) {
   const currentRuleStr = isEdit ? (rules[index] || '') : '';
   const parsed = parseMihomoRule(currentRuleStr);
 
-  const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+  const groups = state.local.routing_targets || state.local.proxy_groups || ['DIRECT', 'REJECT'];
   const allTargets = ['DIRECT', 'REJECT', 'GLOBAL', ...groups.filter(g => !['DIRECT', 'REJECT', 'GLOBAL'].includes(g))];
 
   const modal = document.getElementById('modal-container');
@@ -2680,9 +2690,9 @@ function openAddRuleModal(preset = null) {
     return;
   }
 
-  const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+  const groups = state.local.routing_targets || state.local.proxy_groups || ['DIRECT', 'REJECT'];
   const isGlobalQuic = state.local && !!state.local.global_quic_blocked;
-  const defaultGroup = groups.includes('UNBLOCK') ? 'UNBLOCK' :
+  const defaultGroup = groups.includes('VPN-NON-RU') ? 'VPN-NON-RU' : groups.includes('UNBLOCK') ? 'UNBLOCK' :
                        groups.includes('PROXY') ? 'PROXY' :
                        groups.includes('STABLE') ? 'STABLE' : groups[0];
 
@@ -2710,7 +2720,7 @@ function openAddRuleModal(preset = null) {
         </div>
 
         <div>
-          <label class="block text-zinc-300 mb-1 font-medium">Download URL (.mrs file)</label>
+          <label class="block text-zinc-300 mb-1 font-medium">Download URL (MRS, text, YAML)</label>
           <input id="modal-url" type="text" value="${escapeHtml(initialUrl)}" placeholder="https://..." class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none">
         </div>
 
@@ -2807,6 +2817,8 @@ function openAddRuleModal(preset = null) {
         behavior: behavior,
         format: format,
         proxy_group: proxyGroup,
+        interval: 21600,
+        no_resolve: behavior === 'ipcidr',
         block_quic: blockQuic
       });
       const data = await res.json();
@@ -2828,7 +2840,7 @@ function openAddRuleModal(preset = null) {
 
 function openEditRuleModal(name) {
   if (!state.local) return;
-  const groups = state.local.proxy_groups || ['DIRECT', 'REJECT'];
+  const groups = state.local.routing_targets || state.local.proxy_groups || ['DIRECT', 'REJECT'];
 
   let currentGroup = groups[0];
   (state.local.rules || []).forEach(r => {

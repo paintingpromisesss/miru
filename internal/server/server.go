@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"miru/internal/catalog"
@@ -19,6 +20,12 @@ type Server struct {
 	mihomoSecret string
 	configPath   string
 	httpClient   *http.Client
+	mode string
+	effectivePath string
+	apply func() error
+	txMu sync.Mutex
+	pendingDeletes []string
+	catalogs map[string]*catalog.Catalog
 }
 
 type Config struct {
@@ -28,10 +35,16 @@ type Config struct {
 	MihomoAPI    string
 	MihomoSecret string
 	ConfigPath   string
+	Mode string
+	EffectivePath string
+	Apply func() error // optional injection for tests
+	Catalogs map[string]*catalog.Catalog
 }
 
 func New(cfg Config) *Server {
+	if cfg.Mode == "" { cfg.Mode = "standalone" }
 	secret := cfg.MihomoSecret
+	if secret == "" && cfg.EffectivePath != "" { if e,err:=config.NewYAMLEditor(cfg.EffectivePath);err==nil {secret=e.GetSecret()} }
 	if secret == "" && cfg.Editor != nil {
 		secret = cfg.Editor.GetSecret()
 	}
@@ -44,21 +57,22 @@ func New(cfg Config) *Server {
 		mihomoSecret: secret,
 		configPath:   cfg.ConfigPath,
 		httpClient:   &http.Client{Timeout: 10 * time.Second},
+		mode: cfg.Mode, effectivePath:cfg.EffectivePath, apply:cfg.Apply, catalogs:cfg.Catalogs,
 	}
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/local", s.handleLocal)
-	mux.HandleFunc("/api/catalog", s.handleCatalog)
-	mux.HandleFunc("/api/rules", s.handleRules)
-	mux.HandleFunc("/api/rules/preview", s.handleRulePreview)
-	mux.HandleFunc("/api/proxy-groups", s.handleProxyGroups)
-	mux.HandleFunc("/api/proxy-providers", s.handleProxyProviders)
-	mux.HandleFunc("/api/raw-rules", s.handleRawRules)
-	mux.HandleFunc("/api/raw-rules/move", s.handleMoveRawRule)
-	mux.HandleFunc("/api/quic/global", s.handleGlobalQuic)
-	mux.HandleFunc("/api/reload", s.handleReload)
-	mux.HandleFunc("/api/mihomo/status", s.handleMihomoStatus)
+	mux.HandleFunc("/api/local", s.guard(s.handleLocal))
+	mux.HandleFunc("/api/catalog", s.guard(s.handleCatalog))
+	mux.HandleFunc("/api/rules", s.guard(s.handleRules))
+	mux.HandleFunc("/api/rules/preview", s.guard(s.handleRulePreview))
+	mux.HandleFunc("/api/proxy-groups", s.guard(s.handleProxyGroups))
+	mux.HandleFunc("/api/proxy-providers", s.guard(s.handleProxyProviders))
+	mux.HandleFunc("/api/raw-rules", s.guard(s.handleRawRules))
+	mux.HandleFunc("/api/raw-rules/move", s.guard(s.handleMoveRawRule))
+	mux.HandleFunc("/api/quic/global", s.guard(s.handleGlobalQuic))
+	mux.HandleFunc("/api/reload", s.guard(s.handleReload))
+	mux.HandleFunc("/api/mihomo/status", s.guard(s.handleMihomoStatus))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" && r.URL.Path != "/index.html" {

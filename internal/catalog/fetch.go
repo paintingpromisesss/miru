@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 )
 
@@ -22,6 +23,7 @@ type TreeItem struct {
 }
 
 func (c *Catalog) fetchTree() ([]GitHubFile, error) {
+	if c.repo == "paintingpromisesss/tachyon-mihomo" && c.ref == "generated" { return c.fetchTachyon() }
 	repo := c.repo
 	ref := c.ref
 
@@ -136,4 +138,24 @@ func (c *Catalog) fetchTree() ([]GitHubFile, error) {
 	}
 
 	return files, nil
+}
+
+func (c *Catalog) fetchTachyon() ([]GitHubFile,error) {
+	req,err:=http.NewRequest(http.MethodGet,c.BaseURL()+"manifest.json",nil)
+	if err!=nil {return nil,err}
+	resp,err:=c.client.Do(req)
+	if err!=nil {return nil,err}
+	defer resp.Body.Close()
+	if resp.StatusCode!=200 {return nil,fmt.Errorf("Tachyon manifest: HTTP %d",resp.StatusCode)}
+	var manifest struct { Categories map[string]struct { Providers map[string]struct { File string; Rules int } } }
+	if err=json.NewDecoder(io.LimitReader(resp.Body,4<<20)).Decode(&manifest);err!=nil {return nil,err}
+	var out []GitHubFile
+	for _,cat:=range manifest.Categories {for behavior,p:=range cat.Providers {
+		if (behavior!="domain" && behavior!="ipcidr" && behavior!="classical") || p.Rules<=0 || path.Base(p.File)!=p.File {continue}
+		format:="mrs";if behavior=="classical" {format="text"}
+		out=append(out,GitHubFile{Name:strings.TrimSuffix(strings.TrimSuffix(p.File,".mrs"),".txt"),Path:p.File,Category:"tachyon",Behavior:behavior,Format:format,URL:c.BaseURL()+p.File})
+	}}
+	if len(out)==0 {return nil,fmt.Errorf("empty Tachyon manifest")}
+	sort.Slice(out,func(i,j int)bool{return out[i].Name<out[j].Name})
+	return out,nil
 }

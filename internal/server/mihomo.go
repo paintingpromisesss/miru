@@ -20,6 +20,8 @@ type MihomoStatus struct {
 }
 
 func (s *Server) ReloadMihomo() error {
+	if s.apply != nil { return s.apply() }
+	if s.mode == "nikki" { return s.restartNikki() }
 	url := fmt.Sprintf("%s/configs?force=true", s.mihomoAPI)
 
 	payload := map[string]interface{}{
@@ -191,11 +193,6 @@ func (s *Server) handleGlobalQuic(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) asyncReloadMihomo(action string) {
-	go func() {
-		if err := s.ReloadMihomo(); err != nil {
-			log.Printf("[Mihomo] Reload warning after %s: %v", action, err)
-		}
-	}()
-}
+// All mutations are applied synchronously by guard before success is returned.
+func (s *Server) asyncReloadMihomo(action string) {}
 

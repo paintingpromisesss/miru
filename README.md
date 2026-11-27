@@ -198,3 +198,17 @@ make test
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+## Nikki mode (experimental)
+
+Miru edits the persistent mixin, never /etc/nikki/run/config.yaml. The latter is used only to discover inherited nodes and the controller secret. Enable Nikki mixin file content first. Miru applies changes using the Nikki init script and checks runtime rules; failures restore the previous file and attempt recovery. Restart can interrupt connections. Keep an SSH session open for recovery.
+
+For a manual test on a router with Nikki:
+
+```sh
+MIRU_PASSWORD='choose-a-strong-password' ./miru -mode nikki -bind 192.168.0.1 -port 8787
+```
+
+HTTP Basic login: miru / MIRU_PASSWORD. Use a trusted LAN or SSH tunnel; do not expose this HTTP service publicly. Default bind is loopback, port 8787 (avoids Mihomo's 8080). Standalone mode is the default and uses the Mihomo controller reload. A .miru.bak backup is written before applying an edit.
+
+Catalog picker offers Tachyon (reads the raw manifest) and MetaCubeX. Default catalog in Nikki is Tachyon. Custom URL rulesets and the Settings raw rules editor can route individual domains to any discovered group or node. Only selected providers are registered. Nikki's inherited subscription rules are not edited by Miru.

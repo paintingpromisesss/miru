@@ -55,6 +55,7 @@ func setupTestServer(t *testing.T) (*Server, *http.ServeMux, string, string) {
 		RulesDir:   rulesDir,
 		MihomoAPI:  "http://127.0.0.1:9090",
 		ConfigPath: cfgPath,
+		Apply:func()error{return nil},
 	})
 
 	mux := http.NewServeMux()

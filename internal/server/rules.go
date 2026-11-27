@@ -3,9 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"miru/internal/config"
@@ -19,6 +17,8 @@ type AddRuleRequest struct {
 	ProxyGroup string `json:"proxy_group"`
 	Path       string `json:"path"`
 	BlockQUIC  bool   `json:"block_quic"`
+	Interval int `json:"interval"`
+	NoResolve bool `json:"no_resolve"`
 }
 
 type EditRuleRequest struct {
@@ -84,7 +84,8 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 	if req.Path == "" {
 		ext := map[string]string{"mrs":"mrs","text":"txt","yaml":"yaml"}[req.Format]
 		if ext == "" { writeError(w,http.StatusBadRequest,"Unsupported rule format"); return }
-		req.Path = fmt.Sprintf("rules/%s.%s", req.Name, ext)
+		prefix := "rules"; if s.mode == "nikki" { prefix = "ruleset" }
+		req.Path = fmt.Sprintf("./%s/%s.%s", prefix, req.Name, ext)
 	}
 	if _, err := s.safeRulePath(req.Path); err != nil {
 		writeError(w,http.StatusBadRequest,err.Error()); return
@@ -97,7 +98,7 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 		Format:   req.Format,
 		URL:      req.URL,
 		Path:     req.Path,
-		Interval: 86400,
+		Interval: req.Interval,
 	}
 
 	if err := s.editor.AddRuleProvider(provEntry); err != nil {
@@ -115,6 +116,7 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.NoResolve && req.Behavior == "ipcidr" { if err := s.editor.SetRuleNoResolve(req.Name); err != nil { writeError(w,http.StatusBadRequest,err.Error()); return } }
 	if req.BlockQUIC {
 		_ = s.editor.SetQuicRule(req.Name, true)
 	}
@@ -206,7 +208,7 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 	if deleteFile {
 		if configuredPath == "" { configuredPath = name + ".mrs" }
 		if fullPath, err := s.safeRulePath(configuredPath); err == nil {
-			if err := os.Remove(fullPath); err == nil { log.Printf("[Disk] Removed %s", fullPath) }
+			s.pendingDeletes = append(s.pendingDeletes,fullPath)
 		}
 	}
 

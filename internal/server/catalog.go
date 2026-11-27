@@ -39,14 +39,19 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	selected := s.catalog
+	if source:=r.URL.Query().Get("source");source!="" && source!="default" {
+		var ok bool; selected,ok=s.catalogs[source];if !ok {writeError(w,http.StatusBadRequest,"Unknown catalog");return}
+	}
+	if selected==nil {writeError(w,http.StatusServiceUnavailable,"Catalog unavailable");return}
 	forceRefresh := r.URL.Query().Get("action") == "refresh" || r.URL.Query().Get("refresh") == "true"
 	if forceRefresh {
-		if err := s.catalog.Refresh(); err != nil {
+		if err := selected.Refresh(); err != nil {
 			log.Printf("[Catalog] Refresh error: %v", err)
 		}
 	}
 
-	files, err := s.catalog.List()
+	files, err := selected.List()
 	if err != nil && len(files) == 0 {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load catalog: %v", err))
 		return
@@ -157,7 +162,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, loadedAt, lastErr := s.catalog.Status()
+	_, loadedAt, lastErr := selected.Status()
 	errMsg := ""
 	if lastErr != nil {
 		errMsg = lastErr.Error()

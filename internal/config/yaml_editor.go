@@ -15,9 +15,12 @@ type YAMLEditor struct {
 	mu   sync.RWMutex
 	path string
 	node *yaml.Node
+	mode string
 }
 
-func NewYAMLEditor(path string) (*YAMLEditor, error) {
+func NewYAMLEditor(path string) (*YAMLEditor, error) { return NewModeEditor(path,"standalone") }
+
+func NewModeEditor(path, mode string) (*YAMLEditor, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config file %q: %w", path, err)
@@ -43,6 +46,7 @@ func NewYAMLEditor(path string) (*YAMLEditor, error) {
 	return &YAMLEditor{
 		path: path,
 		node: &node,
+		mode: mode,
 	}, nil
 }
 
@@ -104,7 +108,12 @@ func (e *YAMLEditor) getDocRoot() *yaml.Node {
 	return nil
 }
 
+func (e *YAMLEditor) sectionKey(key string) string {
+	if e.mode == "nikki" && (key == "rules" || key == "proxy-groups" || key == "proxies") { return "nikki-"+key }; return key
+}
+
 func (e *YAMLEditor) readSection(key string) *yaml.Node {
+	key = e.sectionKey(key)
 	root := e.getDocRoot()
 	if root == nil || root.Kind != yaml.MappingNode {
 		return nil
@@ -118,6 +127,7 @@ func (e *YAMLEditor) readSection(key string) *yaml.Node {
 }
 
 func (e *YAMLEditor) ensureSection(key string, defaultKind yaml.Kind, defaultTag string) *yaml.Node {
+	key = e.sectionKey(key)
 	root := e.getDocRoot()
 	if root == nil {
 		root = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}

@@ -22,12 +22,13 @@ func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
 	providers := s.editor.GetRuleProviders()
 	rules := s.editor.GetRules()
 	groups := s.editor.GetProxyGroups()
+	targets := s.routingTargets()
 	activeSetNames := s.editor.GetRuleSetNames()
 
 	var diskFiles []RulesDirEntry
 	if entries, err := os.ReadDir(s.rulesDir); err == nil {
 		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".mrs") {
+			if entry.IsDir() || !(strings.HasSuffix(strings.ToLower(entry.Name()), ".mrs") || strings.HasSuffix(strings.ToLower(entry.Name()), ".txt") || strings.HasSuffix(strings.ToLower(entry.Name()), ".yaml")) {
 				continue
 			}
 			info, err := entry.Info()
@@ -70,9 +71,11 @@ func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
 		"rule_providers":      providers,
 		"rules":               rules,
 		"proxy_groups":        groups,
+		"routing_targets": targets,
+		"mode": s.mode,
 		"proxy_group_entries": s.editor.GetProxyGroupEntries(),
 		"proxy_providers":     s.editor.GetProxyProviders(),
-		"discovered_proxies":  s.editor.GetDiscoveredProxies(),
+		"discovered_proxies":  targets,
 		"applied_rule_sets":   activeSetNames,
 		"quic_blocked":        quicBlocked,
 		"global_quic_blocked": s.editor.HasGlobalQuicRule(),

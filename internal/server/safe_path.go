@@ -26,7 +26,8 @@ func (s *Server) safeRulePath(path string) (string,error) {
 		path = filepath.Clean(path)
 		if path == ".." || strings.HasPrefix(path,".."+string(filepath.Separator)) { return "",fmt.Errorf("rule path escapes rules directory") }
 		// Existing configs use rules/<name> relative to Mihomo home.
-		if strings.HasPrefix(path,"rules"+string(filepath.Separator)) { path = strings.TrimPrefix(path,"rules"+string(filepath.Separator)) }
+		prefix := filepath.Base(root)+string(filepath.Separator)
+		if strings.HasPrefix(path,prefix) { path = strings.TrimPrefix(path,prefix) }
 		path = filepath.Join(root,path)
 	}
 	path = filepath.Clean(path)

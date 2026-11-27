@@ -14,7 +14,9 @@ type ProxyGroupEntry struct {
 	Use           []string `json:"use,omitempty" yaml:"use,omitempty"`
 	URL           string   `json:"url,omitempty" yaml:"url,omitempty"`
 	Interval      int      `json:"interval,omitempty" yaml:"interval,omitempty"`
-	Tolerance     int      `json:"tolerance,omitempty" yaml:"tolerance,omitempty"`
+	Tolerance     int      `json:"tolerance" yaml:"tolerance"`
+	IncludeAllProxies *bool `json:"include_all_proxies,omitempty" yaml:"include-all-proxies,omitempty"`
+	IncludeAllProviders *bool `json:"include_all_providers,omitempty" yaml:"include-all-providers,omitempty"`
 	Lazy          *bool    `json:"lazy,omitempty" yaml:"lazy,omitempty"`
 	Strategy      string   `json:"strategy,omitempty" yaml:"strategy,omitempty"`
 	DisableUDP    *bool    `json:"disable_udp,omitempty" yaml:"disable-udp,omitempty"`
@@ -186,8 +188,10 @@ func (e *YAMLEditor) UpdateProxyGroup(name string, entry ProxyGroupEntry) error 
 	var merged []*yaml.Node
 	for i := 0; i+1 < len(old.Content); i += 2 {
 		k, v := old.Content[i], old.Content[i+1]
+		if (k.Value == "include-all-proxies" && entry.IncludeAllProxies != nil) || (k.Value == "include-all-providers" && entry.IncludeAllProviders != nil) { known[k.Value] = true }
 		if !known[k.Value] {
 			merged = append(merged,k,v)
+			delete(updates,k.Value)
 		} else if replacement, ok := updates[k.Value]; ok {
 			replacement.HeadComment, replacement.LineComment, replacement.FootComment = v.HeadComment, v.LineComment, v.FootComment
 			merged = append(merged,k,replacement)
