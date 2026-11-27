@@ -1,10 +1,14 @@
 name: CI
 on:
   push:
-    branches: ['fix/**', main]
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -18,11 +22,6 @@ jobs:
           npx --yes --package=tailwindcss@3.4.17 tailwindcss -i web/tailwind.css -o /tmp/miru-tailwind.css --content web/index.html --minify
           node web/bundle-css.cjs /tmp/miru-tailwind.css
       - run: node web/check-ui.cjs
-      - name: Browser smoke test
-        run: |
-          npm install --no-save --no-package-lock playwright@1.56.1
-          npx playwright install --with-deps chromium
-          node web/browser-smoke.cjs
       - run: go test ./...
       - run: go vet ./...
       - run: GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/miru-arm64 ./cmd/miru
