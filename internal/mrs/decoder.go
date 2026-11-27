@@ -12,6 +12,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const maxPreviewRules = 200000
+const maxPreviewMemory = 24 << 20
+
 var (
 	MagicBytes         = [4]byte{'M', 'R', 'S', 1} // MRSv1
 	ErrInvalidMagic    = errors.New("invalid MRS magic bytes")
@@ -36,38 +39,20 @@ type DecodedRuleSet struct {
 // DecodeAny attempts to decode MRS binary first, and falls back to YAML or plain text.
 func DecodeAny(data []byte) (*DecodedRuleSet, error) {
 	if len(data) >= 4 && data[0] == 0x28 && data[1] == 0xb5 && data[2] == 0x2f && data[3] == 0xfd {
-		if res, err := Decode(data); err == nil {
-			return res, nil
-		}
+		return Decode(data)
 	} else if len(data) >= 4 && bytes.Equal(data[:4], MagicBytes[:]) {
-		reader := bytes.NewReader(data)
-		var magic [4]byte
-		io.ReadFull(reader, magic[:])
-		var behaviorByte [1]byte
-		io.ReadFull(reader, behaviorByte[:])
-		var count int64
-		binary.Read(reader, binary.BigEndian, &count)
-		var extraLen int64
-		binary.Read(reader, binary.BigEndian, &extraLen)
-		if extraLen > 0 {
-			io.CopyN(io.Discard, reader, extraLen)
-		}
-		if behaviorByte[0] == 0 {
-			if doms, err := readDomainSet(reader); err == nil {
-				return &DecodedRuleSet{Type: TypeDomain, Count: int(count), Rules: doms}, nil
-			}
-		} else if behaviorByte[0] == 1 {
-			if cidrs, err := readIPCIDRSet(reader); err == nil {
-				return &DecodedRuleSet{Type: TypeIPCIDR, Count: int(count), Rules: cidrs}, nil
-			}
-		}
+		return decodeStream(bytes.NewReader(data))
 	}
 
+	if len(data) > maxPreviewMemory || bytes.IndexByte(data, 0) >= 0 {
+		return nil, errors.New("invalid or oversized text ruleset")
+	}
 	type yamlFile struct {
 		Payload []string `yaml:"payload"`
 	}
 	var yf yamlFile
 	if err := yaml.Unmarshal(data, &yf); err == nil && len(yf.Payload) > 0 {
+		if len(yf.Payload) > maxPreviewRules { return nil, errors.New("too many rules for preview") }
 		return &DecodedRuleSet{
 			Type:  TypeClassical,
 			Count: len(yf.Payload),
@@ -82,6 +67,7 @@ func DecodeAny(data []byte) (*DecodedRuleSet, error) {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
 			continue
 		}
+		if len(lines) >= maxPreviewRules { return nil, errors.New("too many rules for preview") }
 		lines = append(lines, trimmed)
 	}
 
@@ -94,12 +80,15 @@ func DecodeAny(data []byte) (*DecodedRuleSet, error) {
 
 // Decode parses an MRS binary stream (zstd compressed) and returns the rules list.
 func Decode(data []byte) (*DecodedRuleSet, error) {
-	reader, err := zstd.NewReader(bytes.NewReader(data))
+	reader, err := zstd.NewReader(bytes.NewReader(data), zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(maxPreviewMemory))
 	if err != nil {
 		return nil, fmt.Errorf("zstd init: %w", err)
 	}
 	defer reader.Close()
+	return decodeStream(reader)
+}
 
+func decodeStream(reader io.Reader) (*DecodedRuleSet, error) {
 	var magic [4]byte
 	if _, err := io.ReadFull(reader, magic[:]); err != nil {
 		return nil, fmt.Errorf("read magic: %w", err)
@@ -118,16 +107,20 @@ func Decode(data []byte) (*DecodedRuleSet, error) {
 		return nil, fmt.Errorf("read count: %w", err)
 	}
 
+	if count < 0 || count > maxPreviewRules {
+		return nil, fmt.Errorf("ruleset count %d exceeds preview limit %d", count, maxPreviewRules)
+	}
+
 	// Extra payload (reserved in MRS spec)
 	var extraLen int64
 	if err := binary.Read(reader, binary.BigEndian, &extraLen); err != nil {
 		return nil, fmt.Errorf("read extra length: %w", err)
 	}
-	if extraLen > 0 {
-		extraBuf := make([]byte, extraLen)
-		if _, err := io.ReadFull(reader, extraBuf); err != nil {
-			return nil, fmt.Errorf("read extra: %w", err)
-		}
+	if extraLen < 0 || extraLen > maxPreviewMemory {
+		return nil, errors.New("invalid extra payload length")
+	}
+	if _, err := io.CopyN(io.Discard, reader, extraLen); err != nil {
+		return nil, fmt.Errorf("read extra: %w", err)
 	}
 
 	res := &DecodedRuleSet{

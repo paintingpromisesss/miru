@@ -1,300 +1,152 @@
 #!/bin/sh
-# Miru installer for OpenWrt and Linux
-# Run on your router or server:
-#   wget -O /tmp/install.sh https://raw.githubusercontent.com/paintingpromisesss/miru/main/scripts/install.sh && sh /tmp/install.sh
-# or:
-#   curl -fsSL https://raw.githubusercontent.com/paintingpromisesss/miru/main/scripts/install.sh | sudo sh
-
-set -e
-
-REPO="paintingpromisesss/miru"
-GITHUB_RAW="https://raw.githubusercontent.com/${REPO}/main"
-
-if [ -n "$MIRU_VERSION" ] && [ "$MIRU_VERSION" != "latest" ]; then
-    case "$MIRU_VERSION" in
-        v*) ;;
-        *)  MIRU_VERSION="v${MIRU_VERSION}" ;;
-    esac
-    GITHUB_RELEASES="https://github.com/${REPO}/releases/download/${MIRU_VERSION}"
-    INSTALL_VERSION="$MIRU_VERSION"
-else
-    GITHUB_RELEASES="https://github.com/${REPO}/releases/latest/download"
-    INSTALL_VERSION="latest"
-fi
-
-BIN_DST="/usr/bin/miru"
-INIT_DST="/etc/init.d/miru"
-SYSTEMD_SERVICE="/etc/systemd/system/miru.service"
-CONFIG_DIR="/etc/miru"
-CONFIG_FILE="${CONFIG_DIR}/miru.env"
-
-ESC=$(printf '\033')
-YEL="${ESC}[1;33m"
-GRY="${ESC}[0;37m"
-DIM="${ESC}[2;37m"
-RED="${ESC}[0;31m"
-GRN="${ESC}[0;32m"
-NC="${ESC}[0m"
-
-sep()   { printf "%b──────────────────────────────────────────────────%b\n" "$DIM" "$NC"; }
-hdr()   { printf "\n%b  %s%b\n" "$YEL" "$1" "$NC"; sep; }
-info()  { printf "%b    %s%b\n" "$GRY" "$1" "$NC"; }
-ok()    { printf "%b  ✓ %s%b\n" "$GRN" "$1" "$NC"; }
-warn()  { printf "%b  ! %s%b\n" "$YEL" "$1" "$NC"; }
-error() { printf "%b  ✗ %s%b\n" "$RED" "$1" "$NC"; exit 1; }
-ask()   { printf "%b    %s%b " "$YEL" "$1" "$NC"; }
-
-read_input() {
-    if [ -t 0 ]; then
-        read -r "$1"
-    elif [ -e /dev/tty ]; then
-        read -r "$1" </dev/tty
-    else
-        read -r "$1" || true
-    fi
-}
-
-check_root() {
-    if [ "$(id -u 2>/dev/null || true)" != "0" ]; then
-        error "This script must be run as root. Please run with sudo or as root."
-    fi
-}
-
-detect_init() {
-    if [ -f /etc/openwrt_release ] || [ -f /etc/init.d/rc.common ]; then
-        INIT_SYSTEM="procd"
-    elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-        INIT_SYSTEM="systemd"
-    else
-        INIT_SYSTEM="unknown"
-    fi
-}
-
-detect_arch() {
-    case "$(uname -m)" in
-        aarch64|arm64)  echo "linux-arm64"  ;;
-        armv7l|armv6l)  echo "linux-arm"    ;;
-        x86_64|amd64)   echo "linux-amd64"  ;;
-        mips)           echo "linux-mips"   ;;
-        mipsel|mipsle)  echo "linux-mipsle" ;;
-        *)
-            error "Unsupported architecture: $(uname -m). Please build manually from source."
-            ;;
-    esac
-}
-
-check_deps() {
-    if ! command -v wget >/dev/null 2>&1 && ! command -v curl >/dev/null 2>&1; then
-        error "Neither wget nor curl is installed. Please install one of them."
-    fi
-    for cmd in chmod mkdir killall; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
-            [ "$cmd" = "killall" ] && continue
-            error "Missing required utility: $cmd"
-        fi
-    done
-}
-
+# Install/update Miru. Never edits Nikki/Mihomo configuration.
+set -eu
+umask 077
+REPO=paintingpromisesss/miru
+BIN=/usr/bin/miru
+CONF=/etc/miru/miru.env
+ASSETS="${MIRU_ASSET_DIR:-}"
+VERSION="${MIRU_VERSION:-latest}"
+fail() { echo "$*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || fail "Run as root"
+command -v sha256sum >/dev/null || fail "sha256sum required"
+if [ -f /etc/openwrt_release ]; then
+    INIT=procd; SERVICE=/etc/init.d/miru; SERVICE_ASSET=miru.init
+elif command -v systemctl >/dev/null && [ -d /run/systemd/system ]; then
+    INIT=systemd; SERVICE=/etc/systemd/system/miru.service; SERVICE_ASSET=miru.service
+else fail "Supported init systems: procd and systemd"; fi
+case "$(uname -m)" in
+    aarch64|arm64) ARCH=arm64;; armv7l) ARCH=arm;;
+    x86_64|amd64) ARCH=amd64;; mips) ARCH=mips;; mipsel|mipsle) ARCH=mipsle;;
+    *) fail "Unsupported architecture: $(uname -m)";;
+esac
+NAME=miru-linux-$ARCH
+case "${MIRU_UPX:-0}" in 1|true) NAME=$NAME-upx;; esac
+STAGE=$(mktemp -d /tmp/miru-install.XXXXXX)
+trap 'rm -rf "$STAGE"' EXIT
+trap 'exit 1' HUP INT TERM
 download() {
-    URL="$1"; DST="$2"
-    info "Fetching $(basename "$DST") ..."
-    if command -v wget >/dev/null 2>&1; then
-        wget -q -O "$DST" "$URL" || error "Download failed: $URL"
-    elif command -v curl >/dev/null 2>&1; then
-        curl -fsSL -o "$DST" "$URL" || error "Download failed: $URL"
-    fi
+    if [ -n "$ASSETS" ]; then cp "$ASSETS/$1" "$2"
+    elif command -v curl >/dev/null; then curl -fLsS --connect-timeout 15 --max-time 180 "$BASE/$1" -o "$2"
+    else wget -O "$2" "$BASE/$1"; fi
 }
-
-configure_settings() {
-    mkdir -p "$CONFIG_DIR"
-
-    DEF_CFG="/etc/mihomo/config.yaml"
-    DEF_RULES="/etc/mihomo/rules"
-    DEF_PORT="8080"
-    DEF_API="http://127.0.0.1:9090"
-    DEF_SECRET=""
-    DEF_GITHUB_TOKEN=""
-    DEF_GITHUB_PROXY="auto"
-
-    if [ -f "$CONFIG_FILE" ]; then
-        info "Found existing configuration in $CONFIG_FILE"
-        . "$CONFIG_FILE"
-        DEF_CFG="${MIRU_CONFIG:-$DEF_CFG}"
-        DEF_RULES="${MIRU_RULES_DIR:-$DEF_RULES}"
-        DEF_PORT="${MIRU_PORT:-$DEF_PORT}"
-        DEF_API="${MIRU_MIHOMO_API:-$DEF_API}"
-        DEF_SECRET="${MIRU_MIHOMO_SECRET:-$DEF_SECRET}"
-        DEF_GITHUB_TOKEN="${MIRU_GITHUB_TOKEN:-$DEF_GITHUB_TOKEN}"
-        DEF_GITHUB_PROXY="${MIRU_GITHUB_PROXY:-$DEF_GITHUB_PROXY}"
-    fi
-
-    if [ -t 0 ] || [ -e /dev/tty ]; then
-        hdr "Configuration Setup"
-
-        ask "Mihomo config.yaml path [${DEF_CFG}]:"
-        read_input IN_CFG
-        [ -n "$IN_CFG" ] && DEF_CFG="$IN_CFG"
-
-        ask "Rules storage directory [${DEF_RULES}]:"
-        read_input IN_RULES
-        [ -n "$IN_RULES" ] && DEF_RULES="$IN_RULES"
-
-        ask "Miru Web UI listen port [${DEF_PORT}]:"
-        read_input IN_PORT
-        [ -n "$IN_PORT" ] && DEF_PORT="$IN_PORT"
-
-        ask "Mihomo API controller URL [${DEF_API}]:"
-        read_input IN_API
-        [ -n "$IN_API" ] && DEF_API="$IN_API"
-    fi
-
-    mkdir -p "$DEF_RULES"
-
-    cat > "$CONFIG_FILE" << EOF
-# Miru configuration environment
-# Updated: $(date -Iseconds 2>/dev/null || date)
-
-MIRU_CONFIG=${DEF_CFG}
-MIRU_RULES_DIR=${DEF_RULES}
-MIRU_PORT=${DEF_PORT}
-MIRU_MIHOMO_API=${DEF_API}
-MIRU_MIHOMO_SECRET=${DEF_SECRET}
-MIRU_GITHUB_TOKEN=${DEF_GITHUB_TOKEN}
-MIRU_GITHUB_PROXY=${DEF_GITHUB_PROXY}
-EOF
-
-    chmod 600 "$CONFIG_FILE"
-    ok "Configuration saved to $CONFIG_FILE"
-    MIRU_ACTIVE_PORT="$DEF_PORT"
+if [ "$VERSION" = latest ]; then
+    BASE=https://github.com/$REPO/releases/latest/download
+    download VERSION "$STAGE/VERSION"
+    VERSION=$(cat "$STAGE/VERSION")
+fi
+printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || fail "Invalid release version"
+BASE=https://github.com/$REPO/releases/download/$VERSION
+for file in "$NAME" "$SERVICE_ASSET" SHA256SUMS; do download "$file" "$STAGE/$file"; done
+for file in "$NAME" "$SERVICE_ASSET"; do
+    (cd "$STAGE"; awk -v f="$file" '$2 == f {print}' SHA256SUMS | sha256sum -c -) || fail "Checksum mismatch: $file"
+done
+chmod 755 "$STAGE/$NAME"
+[ "$("$STAGE/$NAME" -version)" = "$VERSION" ] || fail "Downloaded binary version mismatch"
+# Existing settings take precedence on upgrades.
+if [ -f "$CONF" ]; then . "$CONF"; fi
+if [ -z "${MIRU_MODE:-}" ]; then
+    if [ -x /etc/init.d/nikki ] && [ -f /etc/nikki/mixin.yaml ] && [ "${MIRU_CONFIG:-/etc/nikki/mixin.yaml}" = /etc/nikki/mixin.yaml ]; then MIRU_MODE=nikki
+    else MIRU_MODE=standalone; fi
+fi
+case "$MIRU_MODE" in
+    nikki)
+        [ -x /etc/init.d/nikki ] || fail "Nikki is not installed"
+        [ "$(uci -q get nikki.mixin.mixin_file_content || true)" = 1 ] || fail "Enable Nikki mixin file content first"
+        : "${MIRU_CONFIG:=/etc/nikki/mixin.yaml}"
+        : "${MIRU_RULES_DIR:=/etc/nikki/run/ruleset}"
+        : "${MIRU_GITHUB_PROXY:=none}";;
+    standalone)
+        : "${MIRU_CONFIG:=/etc/mihomo/config.yaml}"
+        : "${MIRU_RULES_DIR:=/etc/mihomo/rules}"
+        : "${MIRU_GITHUB_PROXY:=auto}";;
+    *) fail "Invalid MIRU_MODE";;
+esac
+: "${MIRU_PORT:=8787}"
+: "${MIRU_BIND:=127.0.0.1}"
+: "${MIRU_MIHOMO_API:=http://127.0.0.1:9090}"
+: "${MIRU_MIHOMO_SECRET:=}"
+: "${MIRU_GITHUB_TOKEN:=}"
+: "${MIRU_PASSWORD:=}"
+: "${MIRU_NO_AUTH:=false}"
+case "$MIRU_NO_AUTH" in 1|true) MIRU_NO_AUTH=true;; 0|false) MIRU_NO_AUTH=false;; *) fail "Invalid MIRU_NO_AUTH";; esac
+if [ "$MIRU_BIND" != 127.0.0.1 ] && [ "$MIRU_BIND" != ::1 ] && [ -z "$MIRU_PASSWORD" ] && [ "$MIRU_NO_AUTH" = false ]; then
+    fail "Set MIRU_PASSWORD or explicitly MIRU_NO_AUTH=1 for LAN access"
+fi
+case "$MIRU_PORT" in ''|*[!0-9]*) fail "Invalid port";; esac
+[ "$MIRU_PORT" -ge 1 ] && [ "$MIRU_PORT" -le 65535 ] || fail "Invalid port"
+[ -f "$MIRU_CONFIG" ] || fail "Missing config: $MIRU_CONFIG"
+export MIRU_MODE MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_PORT MIRU_BIND MIRU_MIHOMO_API MIRU_MIHOMO_SECRET MIRU_GITHUB_TOKEN MIRU_PASSWORD MIRU_NO_AUTH
+"$STAGE/$NAME" -check-config
+write_var() {
+    printf "%s='" "$1"
+    printf '%s' "$2" | sed "s/'/'\\\\''/g"
+    printf "'\n"
 }
-
-install_service() {
-    SCRIPT_DIR="$(dirname "$0" 2>/dev/null || true)"
-
-    if [ "$INIT_SYSTEM" = "procd" ]; then
-        if [ -f "${SCRIPT_DIR}/miru.init" ]; then
-            cp "${SCRIPT_DIR}/miru.init" "$INIT_DST"
-        else
-            download "${GITHUB_RAW}/scripts/miru.init" "$INIT_DST"
-        fi
-        chmod +x "$INIT_DST"
-        "$INIT_DST" enable >/dev/null 2>&1 || true
-        ok "Installed OpenWrt procd init script to $INIT_DST"
-    elif [ "$INIT_SYSTEM" = "systemd" ]; then
-        if [ -f "${SCRIPT_DIR}/miru.service" ]; then
-            cp "${SCRIPT_DIR}/miru.service" "$SYSTEMD_SERVICE"
-        else
-            download "${GITHUB_RAW}/scripts/miru.service" "$SYSTEMD_SERVICE"
-        fi
-        systemctl daemon-reload
-        systemctl enable miru >/dev/null 2>&1 || true
-        ok "Installed systemd unit to $SYSTEMD_SERVICE"
-    else
-        warn "Unknown init system. Binary installed to $BIN_DST, please start manually."
-    fi
+for key in MIRU_MODE MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_PORT MIRU_BIND MIRU_MIHOMO_API MIRU_MIHOMO_SECRET MIRU_GITHUB_TOKEN MIRU_PASSWORD MIRU_NO_AUTH; do
+    eval 'value=${'"$key"'}'
+    write_var "$key" "$value"
+done > "$STAGE/miru.env"
+mkdir -p /etc/miru
+chmod 700 /etc/miru
+for pair in "binary:$BIN" "service:$SERVICE" "config:$CONF"; do
+    name=${pair%%:*}; path=${pair#*:}
+    if [ -f "$path" ]; then cp -p "$path" "$STAGE/old-$name"; fi
+done
+was_running=false
+if [ "$INIT" = procd ]; then
+    if [ -x "$SERVICE" ] && "$SERVICE" running >/dev/null 2>&1; then was_running=true; fi
+else
+    if systemctl is-active --quiet miru; then was_running=true; fi
+fi
+stop() {
+    if [ "$INIT" = procd ]; then [ ! -x "$SERVICE" ] || "$SERVICE" stop
+    else systemctl stop miru; fi
 }
-
-start_service() {
-    hdr "Starting Miru service"
-    if [ "$INIT_SYSTEM" = "procd" ]; then
-        "$INIT_DST" restart >/dev/null 2>&1 || "$INIT_DST" start >/dev/null 2>&1 || true
-    elif [ "$INIT_SYSTEM" = "systemd" ]; then
-        systemctl restart miru >/dev/null 2>&1 || systemctl start miru >/dev/null 2>&1 || true
-    fi
-    sleep 2
-
-    PORT="${MIRU_ACTIVE_PORT:-8080}"
-    HEALTH_OK=0
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/api/local" 2>/dev/null && HEALTH_OK=1 || true
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q -O /dev/null "http://127.0.0.1:${PORT}/api/local" 2>/dev/null && HEALTH_OK=1 || true
-    fi
-
-    if [ "$HEALTH_OK" = "1" ]; then
-        ok "Miru service is running and healthy!"
-    else
-        warn "Service started, checking health on http://127.0.0.1:${PORT}..."
-    fi
-    return 0
+start() {
+    if [ "$INIT" = procd ]; then "$SERVICE" start
+    else systemctl daemon-reload && systemctl start miru; fi
 }
-
-detect_ip() {
-    ROUTER_IP=""
-    if command -v uci >/dev/null 2>&1; then
-        ROUTER_IP="$(uci -q get network.lan.ipaddr 2>/dev/null || true)"
-    fi
-    if [ -z "$ROUTER_IP" ] && command -v ip >/dev/null 2>&1; then
-        ROUTER_IP="$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2}' | head -n1 || true)"
-        if [ -z "$ROUTER_IP" ]; then
-            ROUTER_IP="$(ip -4 addr show lan 2>/dev/null | awk '/inet /{print $2}' | head -n1 || true)"
-        fi
-        if [ -z "$ROUTER_IP" ]; then
-            ROUTER_IP="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' || true)"
-        fi
-    fi
-    if [ -z "$ROUTER_IP" ] && command -v hostname >/dev/null 2>&1; then
-        ROUTER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
-    fi
-    ROUTER_IP="${ROUTER_IP%% *}"
-    ROUTER_IP="${ROUTER_IP%%/*}"
-    ROUTER_IP="$(echo "$ROUTER_IP" | tr -d ' \r\n')"
-    [ -z "$ROUTER_IP" ] && ROUTER_IP="127.0.0.1"
-    return 0
+replace_file() { cp "$1" "$2.miru-new" && chmod "$3" "$2.miru-new" && mv -f "$2.miru-new" "$2"; }
+restore_file() {
+    if [ -f "$1" ]; then cp -p "$1" "$2.miru-new" && mv -f "$2.miru-new" "$2"
+    else rm -f "$2"; fi
 }
-
-main() {
-    check_root
-    check_deps
-    detect_init
-
-    printf "\n%b==================================================%b\n" "$YEL" "$NC"
-    printf "%b  Miru — Mihomo Rule Manager Installer%b\n" "$YEL" "$NC"
-    printf "%b==================================================%b\n" "$YEL" "$NC"
-
-    ARCH=$(detect_arch)
-    if [ "$MIRU_UPX" = "1" ] || [ "$MIRU_UPX" = "true" ]; then
-        ARCH="${ARCH}-upx"
-    fi
-
-    info "Platform: $ARCH | Init: $INIT_SYSTEM | Version: $INSTALL_VERSION"
-
-    if [ "$INIT_SYSTEM" = "procd" ] && [ -x "$INIT_DST" ]; then
-        "$INIT_DST" stop >/dev/null 2>&1 || true
-    elif [ "$INIT_SYSTEM" = "systemd" ] && systemctl is-active --quiet miru 2>/dev/null; then
-        systemctl stop miru >/dev/null 2>&1 || true
-    fi
-
-    hdr "Downloading binary"
-    BIN_NAME="miru-${ARCH}"
-    BIN_URL="${GITHUB_RELEASES}/${BIN_NAME}"
-    TMP_BIN="/tmp/miru.tmp.$$"
-
-    download "$BIN_URL" "$TMP_BIN"
-    chmod +x "$TMP_BIN"
-    mv "$TMP_BIN" "$BIN_DST"
-    ok "Binary installed to $BIN_DST"
-
-    configure_settings
-    install_service
-    start_service
-    detect_ip
-
-    PORT="${MIRU_ACTIVE_PORT:-8080}"
-    printf "\n%b==================================================%b\n" "$YEL" "$NC"
-    printf "%b  Done! Miru Web UI is ready:%b\n" "$GRN" "$NC"
-    printf "%b==================================================%b\n\n" "$YEL" "$NC"
-    printf "  Web UI:       %bhttp://${ROUTER_IP}:${PORT}%b\n" "$YEL" "$NC"
-    printf "  Localhost:    %bhttp://127.0.0.1:${PORT}%b\n" "$DIM" "$NC"
-    printf "  Config file:  %b/etc/miru/miru.env%b\n\n" "$GRY" "$NC"
-
-    if [ "$INIT_SYSTEM" = "procd" ]; then
-        printf "  Service logs: %blogread -f -e miru%b\n" "$DIM" "$NC"
-        printf "  Restart:      %b/etc/init.d/miru restart%b\n\n" "$DIM" "$NC"
-    elif [ "$INIT_SYSTEM" = "systemd" ]; then
-        printf "  Service logs: %bjournalctl -u miru -f%b\n" "$DIM" "$NC"
-        printf "  Restart:      %bsystemctl restart miru%b\n\n" "$DIM" "$NC"
-    fi
+rollback() {
+    trap - HUP INT TERM
+    echo "Installation failed; restoring previous Miru files" >&2
+    stop || true
+    restore_file "$STAGE/old-binary" "$BIN" || echo "Binary restore failed" >&2
+    restore_file "$STAGE/old-service" "$SERVICE" || echo "Service restore failed" >&2
+    restore_file "$STAGE/old-config" "$CONF" || echo "Settings restore failed" >&2
+    if [ "$INIT" = systemd ]; then systemctl daemon-reload || true; fi
+    if [ "$was_running" = true ]; then start || echo "Previous service failed to restart" >&2; fi
+    exit 1
 }
-
-main "$@"
+if [ "$was_running" = true ]; then stop || fail "Could not stop old Miru service"; fi
+trap rollback HUP INT TERM
+replace_file "$STAGE/$NAME" "$BIN" 755 || rollback
+replace_file "$STAGE/$SERVICE_ASSET" "$SERVICE" 755 || rollback
+replace_file "$STAGE/miru.env" "$CONF" 600 || rollback
+start || rollback
+HOST=$MIRU_BIND
+case "$HOST" in 0.0.0.0) HOST=127.0.0.1;; ::) HOST='[::1]';; *:*) HOST="[$HOST]";; esac
+healthy=false
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    if command -v curl >/dev/null; then
+        result=$(curl -fsS --max-time 2 "http://$HOST:$MIRU_PORT/healthz" 2>/dev/null || true)
+    else result=$(wget -q -T 2 -O - "http://$HOST:$MIRU_PORT/healthz" 2>/dev/null || true); fi
+    if [ "$result" = "miru $VERSION" ]; then
+        if [ "$INIT" = procd ]; then "$SERVICE" running >/dev/null 2>&1 && healthy=true
+        else systemctl is-active --quiet miru && healthy=true; fi
+        [ "$healthy" = false ] || break
+    fi
+    sleep 1
+done
+[ "$healthy" = true ] || rollback
+if [ "$INIT" = procd ]; then "$SERVICE" enable || rollback
+else systemctl enable miru || rollback; fi
+trap 'exit 1' HUP INT TERM
+printf 'Miru %s installed (%s). Web UI: http://%s:%s/\n' "$VERSION" "$MIRU_MODE" "$HOST" "$MIRU_PORT"
+printf 'Settings: %s\n' "$CONF"
+if [ "$MIRU_NO_AUTH" = true ]; then echo 'WARNING: authentication disabled; trusted LAN only.'; fi

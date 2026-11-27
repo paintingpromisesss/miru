@@ -3,10 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"miru/internal/config"
@@ -20,6 +17,8 @@ type AddRuleRequest struct {
 	ProxyGroup string `json:"proxy_group"`
 	Path       string `json:"path"`
 	BlockQUIC  bool   `json:"block_quic"`
+	Interval int `json:"interval"`
+	NoResolve bool `json:"no_resolve"`
 }
 
 type EditRuleRequest struct {
@@ -55,8 +54,8 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 	req.ProxyGroup = strings.TrimSpace(req.ProxyGroup)
 	req.URL = strings.TrimSpace(req.URL)
 
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "Rule name is required")
+	if !validRuleName(req.Name) {
+		writeError(w, http.StatusBadRequest, "Invalid rule name")
 		return
 	}
 	if req.ProxyGroup == "" {
@@ -78,8 +77,18 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 	if req.Format == "" {
 		req.Format = "mrs"
 	}
+	if req.Behavior == "classical" && req.Format == "mrs" {
+		writeError(w,http.StatusBadRequest,"MRS does not support classical rules")
+		return
+	}
 	if req.Path == "" {
-		req.Path = fmt.Sprintf("rules/%s.mrs", req.Name)
+		ext := map[string]string{"mrs":"mrs","text":"txt","yaml":"yaml"}[req.Format]
+		if ext == "" { writeError(w,http.StatusBadRequest,"Unsupported rule format"); return }
+		prefix := "rules"; if s.mode == "nikki" { prefix = "ruleset" }
+		req.Path = fmt.Sprintf("./%s/%s.%s", prefix, req.Name, ext)
+	}
+	if _, err := s.safeRulePath(req.Path); err != nil {
+		writeError(w,http.StatusBadRequest,err.Error()); return
 	}
 
 	provEntry := config.RuleProviderEntry{
@@ -89,24 +98,35 @@ func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
 		Format:   req.Format,
 		URL:      req.URL,
 		Path:     req.Path,
-		Interval: 86400,
+		Interval: req.Interval,
 	}
 
-	if err := s.editor.AddRuleProvider(provEntry); err != nil {
+	// A provider may already be registered without a routing directive.
+	// Reuse only an exact matching provider, never overwrite unrelated lists.
+	reuse := false
+	for _, p := range s.editor.GetRuleProviders() {
+		if p.Name != req.Name { continue }
+		if p.URL != req.URL || p.Behavior != req.Behavior || p.Format != req.Format {
+			writeError(w,http.StatusConflict,"Rule provider name belongs to a different ruleset");return
+		}
+		reuse=true
+	}
+	if !reuse { if err := s.editor.AddRuleProvider(provEntry); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to add rule-provider: %v", err))
 		return
-	}
+	} }
 
 	if err := s.editor.AddRule(req.Name, req.ProxyGroup); err != nil {
-		_ = s.editor.RemoveRuleProvider(req.Name)
+		if !reuse { _ = s.editor.RemoveRuleProvider(req.Name) }
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to add rule line: %v", err))
 		return
 	}
 
+	if req.NoResolve && req.Behavior == "ipcidr" { if err := s.editor.SetRuleNoResolve(req.Name); err != nil { writeError(w,http.StatusBadRequest,err.Error()); return } }
 	if req.BlockQUIC {
 		_ = s.editor.SetQuicRule(req.Name, true)
 	}
@@ -173,13 +193,13 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = strings.TrimSpace(r.URL.Query().Get("provider"))
 	}
-	if name == "" {
+	if !validRuleName(name) {
 		writeError(w, http.StatusBadRequest, "Query parameter 'name' or 'provider' required")
 		return
 	}
 
 	deleteFileParam := strings.ToLower(r.URL.Query().Get("delete_file"))
-	deleteFile := deleteFileParam == "true" || deleteFileParam == "1" || deleteFileParam == ""
+	deleteFile := deleteFileParam == "true" || deleteFileParam == "1"
 
 	configuredPath := s.editor.GetRuleProviderPath(name)
 
@@ -191,25 +211,15 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if deleteFile {
-		if configuredPath != "" {
-			fullPath := configuredPath
-			if !filepath.IsAbs(fullPath) {
-				fullPath = filepath.Join(s.rulesDir, filepath.Base(configuredPath))
-			}
-			if err := os.Remove(fullPath); err == nil {
-				log.Printf("[Disk] Removed %s", fullPath)
-			}
-		}
-		fallbackPath := filepath.Join(s.rulesDir, name+".mrs")
-		if _, err := os.Stat(fallbackPath); err == nil {
-			_ = os.Remove(fallbackPath)
-		}
-	}
-
 	if err := s.editor.Save(); err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to save config: %v", err))
 		return
+	}
+	if deleteFile {
+		if configuredPath == "" { configuredPath = name + ".mrs" }
+		if fullPath, err := s.safeRulePath(configuredPath); err == nil {
+			s.pendingDeletes = append(s.pendingDeletes,fullPath)
+		}
 	}
 
 	s.asyncReloadMihomo("delete rule " + name)

@@ -2,16 +2,33 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          v=$(cat VERSION)
+          [[ "$v" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./... && go vet ./... && sh -n scripts/install.sh
   build:
     name: Build binaries
-    runs-on: ubuntu-latest
+    needs: prepare
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
@@ -42,6 +59,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Bundle local CSS
+        run: |
+          npx --yes --package=tailwindcss@3.4.17 tailwindcss -i web/tailwind.css -o /tmp/miru-tailwind.css --content web/index.html --minify
+          node web/bundle-css.cjs /tmp/miru-tailwind.css
+
       - name: Install UPX
         run: sudo apt-get update && sudo apt-get install -y upx
 
@@ -57,7 +79,7 @@ jobs:
           BIN="miru-${{ matrix.suffix }}"
           go build \
             -tags nethttpomithttp2 \
-            -ldflags="-s -w -X main.AppVersion=${{ github.ref_name }}" \
+            -ldflags="-s -w -X main.AppVersion=${{ needs.prepare.outputs.version }}" \
             -trimpath \
             -o "bin/${BIN}" \
             ./cmd/miru
@@ -74,7 +96,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,19 +107,31 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          make_latest: ${{ !contains(github.ref_name, '-') }}
-          body: |
-            ### Supported architectures
-            | File (standard) | File (UPX-compressed) | Target / Architecture |
-            |-----------------|-----------------------|-----------------------|
-            | `miru-linux-arm64` | `miru-linux-arm64-upx` | MediaTek Filogic, RPi 4/5, Rockchip (ARM64) |
-            | `miru-linux-arm` | `miru-linux-arm-upx` | Cortex-A7 / Cortex-A9 routers (ARMv7) |
-            | `miru-linux-amd64` | `miru-linux-amd64-upx` | x86-64 routers, Mini PCs, servers |
-            | `miru-linux-mips` | `miru-linux-mips-upx` | Atheros AR7xxx / AR9xxx (big-endian) |
-            | `miru-linux-mipsle` | `miru-linux-mipsle-upx` | MediaTek MT7620 / MT7621 / MT7628 (little-endian) |
+      - name: Publish release and retire old versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          cp VERSION scripts/install.sh scripts/miru.init scripts/miru.service dist/
+          (cd dist && sha256sum * > SHA256SUMS.tmp && mv SHA256SUMS.tmp SHA256SUMS)
+          # Only this first consolidated release may replace an existing tag.
+          if [ "$VERSION" = v1.0.0 ]; then
+            git push origin "$GITHUB_SHA:refs/tags/$VERSION" --force
+          else
+            git push origin "$GITHUB_SHA:refs/tags/$VERSION"
+          fi
+          if ! gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release create "$VERSION" --verify-tag --title "Miru $VERSION" --notes "Standalone and Nikki support, persistent installation, Tachyon catalog and offline web UI."
+          fi
+          gh release upload "$VERSION" dist/* --clobber
+          gh release edit "$VERSION" --draft=false --prerelease=false --latest --title "Miru $VERSION" --notes "Standalone and Nikki support, persistent installation, Tachyon catalog and offline web UI. See README for installation."
+          # Verify all uploaded assets before deleting superseded releases/tags.
+          gh release view "$VERSION" --json assets --jq '.assets[].name' > /tmp/release-assets
+          for file in dist/*; do grep -Fx "$(basename "$file")" /tmp/release-assets; done
+          if [ "$VERSION" = v1.0.0 ]; then
+            for old in v1.0.1 v1.0.2 v1.0.3 v1.0.4 v1.1.0 v1.2.0; do
+              if gh release view "$old" >/dev/null 2>&1; then gh release delete "$old" --yes; fi
+              if git ls-remote --exit-code --tags origin "refs/tags/$old" >/dev/null; then git push origin --delete "$old"; fi
+            done
+          fi

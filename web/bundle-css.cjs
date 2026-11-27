@@ -1,0 +1,10 @@
+const fs=require('node:fs');
+const p='web/index.html';
+let html=fs.readFileSync(p,'utf8');
+const css=fs.readFileSync(process.argv[2],'utf8');
+if(!css.includes('box-sizing:border-box')) throw Error('Missing compiled Tailwind CSS');
+const cdn=/<script src="https:\/\/cdn\.tailwindcss\.com"><\/script>\s*<script>[\s\S]*?<\/script>/;
+if(!cdn.test(html)) throw Error('Expected development Tailwind script not found');
+html=html.replace(cdn,()=>'<style>\n'+css+'\n</style>');
+html=html.replace(/<link[^>]+(?:fonts\.googleapis\.com|fonts\.gstatic\.com)[^>]*>\s*/g,'');
+fs.writeFileSync(p,html);

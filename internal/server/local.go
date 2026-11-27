@@ -2,7 +2,8 @@ package server
 
 import (
 	"net/http"
-	"os"
+	"path/filepath"
+	"io/fs"
 	"sort"
 	"strings"
 )
@@ -22,28 +23,19 @@ func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
 	providers := s.editor.GetRuleProviders()
 	rules := s.editor.GetRules()
 	groups := s.editor.GetProxyGroups()
+	targets := s.routingTargets()
 	activeSetNames := s.editor.GetRuleSetNames()
 
 	var diskFiles []RulesDirEntry
-	if entries, err := os.ReadDir(s.rulesDir); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".mrs") {
-				continue
-			}
-			info, err := entry.Info()
-			if err != nil {
-				continue
-			}
-			diskFiles = append(diskFiles, RulesDirEntry{
-				Name:    info.Name(),
-				Size:    info.Size(),
-				ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
-			})
-		}
-		sort.Slice(diskFiles, func(i, j int) bool {
-			return diskFiles[i].Name < diskFiles[j].Name
-		})
-	}
+	_ = filepath.WalkDir(s.rulesDir,func(p string,d fs.DirEntry,err error)error{
+		if err!=nil||d.IsDir(){return nil}
+		name:=strings.ToLower(d.Name())
+		if !(strings.HasSuffix(name,".mrs")||strings.HasSuffix(name,".txt")||strings.HasSuffix(name,".yaml")){return nil}
+		info,err:=d.Info();if err!=nil||!info.Mode().IsRegular(){return nil}
+		rel,err:=filepath.Rel(s.rulesDir,p);if err!=nil{return nil}
+		diskFiles=append(diskFiles,RulesDirEntry{Name:rel,Size:info.Size(),ModTime:info.ModTime().Format("2006-01-02 15:04:05")});return nil
+	})
+	sort.Slice(diskFiles,func(i,j int)bool{return diskFiles[i].Name<diskFiles[j].Name})
 
 	quicBlocked := make([]string, 0)
 	for _, prov := range providers {
@@ -70,9 +62,11 @@ func (s *Server) handleLocal(w http.ResponseWriter, r *http.Request) {
 		"rule_providers":      providers,
 		"rules":               rules,
 		"proxy_groups":        groups,
+		"routing_targets": targets,
+		"mode": s.mode,
 		"proxy_group_entries": s.editor.GetProxyGroupEntries(),
 		"proxy_providers":     s.editor.GetProxyProviders(),
-		"discovered_proxies":  s.editor.GetDiscoveredProxies(),
+		"discovered_proxies":  targets,
 		"applied_rule_sets":   activeSetNames,
 		"quic_blocked":        quicBlocked,
 		"global_quic_blocked": s.editor.HasGlobalQuicRule(),

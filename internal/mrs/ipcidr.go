@@ -22,7 +22,7 @@ func readIPCIDRSet(r io.Reader) ([]string, error) {
 	if err := binary.Read(r, binary.BigEndian, &length); err != nil {
 		return nil, err
 	}
-	if length < 0 {
+	if length < 0 || length > maxPreviewRules {
 		return nil, errors.New("invalid ipcidr length")
 	}
 
@@ -40,7 +40,9 @@ func readIPCIDRSet(r io.Reader) ([]string, error) {
 		to := netip.AddrFrom16(a16To).Unmap()
 
 		ipRange := netipx.IPRangeFrom(from, to)
+		if !ipRange.IsValid() { return nil, errors.New("invalid IP range") }
 		for _, prefix := range ipRange.Prefixes() {
+			if len(cidrs) >= maxPreviewRules { return nil, errors.New("too many prefixes for preview") }
 			cidrs = append(cidrs, prefix.String())
 		}
 	}

@@ -8,13 +8,13 @@ import (
 )
 
 func isQuicRuleForRuleSet(ruleStr, ruleSet string) bool {
-	r := strings.ToLower(ruleStr)
-	name := strings.ToLower(ruleSet)
-	return strings.Contains(r, "and,") &&
-		(strings.Contains(r, "rule-set,"+name) || strings.Contains(r, "rule-set, "+name)) &&
-		strings.Contains(r, "443") &&
-		strings.Contains(r, "udp") &&
-		strings.Contains(r, "reject")
+	return normalizeQuicRule(ruleStr) == normalizeQuicRule(fmt.Sprintf("AND,((RULE-SET,%s),(NETWORK,udp),(DST-PORT,443)),REJECT", ruleSet))
+}
+
+func normalizeQuicRule(s string) string {
+	parts := strings.Split(s,",")
+	for i := range parts { parts[i] = strings.TrimSpace(parts[i]) }
+	return strings.ToLower(strings.Join(parts,","))
 }
 
 func (e *YAMLEditor) HasQuicRule(ruleSet string) bool {
@@ -95,12 +95,7 @@ func (e *YAMLEditor) SetQuicRule(ruleSet string, enable bool) error {
 }
 
 func isGlobalQuicRule(ruleStr string) bool {
-	r := strings.ToLower(ruleStr)
-	return strings.Contains(r, "and,") &&
-		!strings.Contains(r, "rule-set") &&
-		strings.Contains(r, "443") &&
-		strings.Contains(r, "udp") &&
-		strings.Contains(r, "reject")
+	return normalizeQuicRule(ruleStr) == "and,((network,udp),(dst-port,443)),reject"
 }
 
 func (e *YAMLEditor) HasGlobalQuicRule() bool {

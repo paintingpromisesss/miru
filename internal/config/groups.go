@@ -14,7 +14,9 @@ type ProxyGroupEntry struct {
 	Use           []string `json:"use,omitempty" yaml:"use,omitempty"`
 	URL           string   `json:"url,omitempty" yaml:"url,omitempty"`
 	Interval      int      `json:"interval,omitempty" yaml:"interval,omitempty"`
-	Tolerance     int      `json:"tolerance,omitempty" yaml:"tolerance,omitempty"`
+	Tolerance     int      `json:"tolerance" yaml:"tolerance"`
+	IncludeAllProxies *bool `json:"include_all_proxies,omitempty" yaml:"include-all-proxies,omitempty"`
+	IncludeAllProviders *bool `json:"include_all_providers,omitempty" yaml:"include-all-providers,omitempty"`
 	Lazy          *bool    `json:"lazy,omitempty" yaml:"lazy,omitempty"`
 	Strategy      string   `json:"strategy,omitempty" yaml:"strategy,omitempty"`
 	DisableUDP    *bool    `json:"disable_udp,omitempty" yaml:"disable-udp,omitempty"`
@@ -174,7 +176,34 @@ func (e *YAMLEditor) UpdateProxyGroup(name string, entry ProxyGroupEntry) error 
 		return fmt.Errorf("unmarshal updated proxy group node: %w", err)
 	}
 
-	section.Content[idx] = docNode.Content[0]
+	// Preserve fields not represented by the UI (include-all-proxies,
+	// empty-fallback, timeout, etc.) and comments on existing keys.
+	old := section.Content[idx]
+	next := docNode.Content[0]
+	known := map[string]bool{"name":true,"type":true,"proxies":true,"use":true,"url":true,"interval":true,"tolerance":true,"lazy":true,"strategy":true,"disable-udp":true,"filter":true,"exclude-filter":true}
+	updates := map[string]*yaml.Node{}
+	for i := 0; i+1 < len(next.Content); i += 2 {
+		updates[next.Content[i].Value] = next.Content[i+1]
+	}
+	var merged []*yaml.Node
+	for i := 0; i+1 < len(old.Content); i += 2 {
+		k, v := old.Content[i], old.Content[i+1]
+		if (k.Value == "include-all-proxies" && entry.IncludeAllProxies != nil) || (k.Value == "include-all-providers" && entry.IncludeAllProviders != nil) { known[k.Value] = true }
+		if !known[k.Value] {
+			merged = append(merged,k,v)
+			delete(updates,k.Value)
+		} else if replacement, ok := updates[k.Value]; ok {
+			replacement.HeadComment, replacement.LineComment, replacement.FootComment = v.HeadComment, v.LineComment, v.FootComment
+			merged = append(merged,k,replacement)
+			delete(updates,k.Value)
+		}
+	}
+	for i := 0; i+1 < len(next.Content); i += 2 {
+		if v, ok := updates[next.Content[i].Value]; ok {
+			merged = append(merged,next.Content[i],v)
+		}
+	}
+	old.Content = merged
 	return nil
 }
 

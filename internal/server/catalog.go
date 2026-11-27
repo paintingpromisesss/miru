@@ -17,9 +17,13 @@ type CatalogItemResponse struct {
 	Path        string `json:"path"`
 	Category    string `json:"category"`
 	Behavior    string `json:"behavior"`
+	Format string `json:"format,omitempty"`
+	RuleCount int `json:"rule_count,omitempty"`
 	Size        int    `json:"size"`
 	URL         string `json:"url"`
 	Applied     bool   `json:"applied"`
+	Registered bool `json:"registered"`
+	ProviderName string `json:"provider_name,omitempty"`
 	BlockQUIC   bool   `json:"block_quic"`
 	Downloaded  bool   `json:"downloaded"`
 	HasDiff     bool   `json:"has_diff"`
@@ -27,7 +31,7 @@ type CatalogItemResponse struct {
 }
 
 func cleanURL(u string) string {
-	u = strings.TrimSpace(strings.ToLower(u))
+	u = strings.TrimSpace(u)
 	u = strings.TrimSuffix(u, "/")
 	return u
 }
@@ -38,14 +42,19 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	selected := s.catalog
+	if source:=r.URL.Query().Get("source");source!="" && source!="default" {
+		var ok bool; selected,ok=s.catalogs[source];if !ok {writeError(w,http.StatusBadRequest,"Unknown catalog");return}
+	}
+	if selected==nil {writeError(w,http.StatusServiceUnavailable,"Catalog unavailable");return}
 	forceRefresh := r.URL.Query().Get("action") == "refresh" || r.URL.Query().Get("refresh") == "true"
 	if forceRefresh {
-		if err := s.catalog.Refresh(); err != nil {
+		if err := selected.Refresh(); err != nil {
 			log.Printf("[Catalog] Refresh error: %v", err)
 		}
 	}
 
-	files, err := s.catalog.List()
+	files, err := selected.List()
 	if err != nil && len(files) == 0 {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load catalog: %v", err))
 		return
@@ -54,13 +63,8 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	activeNames := s.editor.GetRuleSetNames()
 	providers := s.editor.GetRuleProviders()
 
-	appliedSet := make(map[string]string, len(activeNames)+len(providers))
-	for _, name := range activeNames {
-		appliedSet[strings.ToLower(name)] = name
-	}
-	for _, prov := range providers {
-		appliedSet[strings.ToLower(prov.Name)] = prov.Name
-	}
+	activeSet := make(map[string]bool, len(activeNames))
+	for _, name := range activeNames { activeSet[name] = true }
 
 	diskFiles := make(map[string]int64)
 	if entries, err := os.ReadDir(s.rulesDir); err == nil {
@@ -76,45 +80,33 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	items := make([]CatalogItemResponse, len(files))
 	for i, f := range files {
 		cleanName := f.Name
-		appliedName, isApplied := appliedSet[strings.ToLower(cleanName)]
-		if !isApplied && f.Category != "" {
-			appliedName, isApplied = appliedSet[strings.ToLower(f.Category+"-"+cleanName)]
-		}
-
+		// Identify the provider, not just a same-named catalog item.
+		// A registered provider (or an existing cache) is not an active route.
 		var matchedProv *config.RuleProviderEntry
-		if isApplied {
-			for _, prov := range providers {
-				if strings.EqualFold(prov.Name, appliedName) {
-					p := prov
-					matchedProv = &p
-					break
-				}
+		for _, prov := range providers {
+			if f.Behavior != "" && prov.Behavior != f.Behavior { continue }
+			matches := f.URL != "" && prov.URL != "" && cleanURL(f.URL) == cleanURL(prov.URL)
+			if !matches && (f.URL == "" || prov.URL == "") {
+				matches = prov.Name == f.Name || prov.Name == f.Category+"-"+f.Name
 			}
-		} else if f.URL != "" {
-			cleanFURL := cleanURL(f.URL)
-			cleanFPath := strings.ToLower(f.Path)
-			cleanFName := strings.ToLower(f.Name) + ".mrs"
-			for _, prov := range providers {
-				if prov.URL == "" {
-					continue
-				}
-				cleanPURL := cleanURL(prov.URL)
-				if cleanPURL == cleanFURL ||
-					strings.HasSuffix(cleanPURL, "/"+cleanFPath) ||
-					strings.HasSuffix(cleanPURL, "/"+cleanFName) {
-					isApplied = true
-					appliedName = prov.Name
-					p := prov
-					matchedProv = &p
-					break
-				}
+			if !matches { continue }
+			if matchedProv == nil || (activeSet[prov.Name] && !activeSet[matchedProv.Name]) {
+				p:=prov; matchedProv=&p
 			}
+		}
+		providerName, appliedName := "", ""
+		isApplied := false
+		if matchedProv != nil {
+			providerName=matchedProv.Name
+			isApplied=activeSet[providerName]
+			if isApplied { appliedName=providerName }
 		}
 
 		var downloaded bool
 		var hasDiff bool
 		var diskSize int64
 
+		if matchedProv!=nil && matchedProv.Path!="" {if p,err:=s.safeRulePath(matchedProv.Path);err==nil {if info,err:=os.Stat(p);err==nil&&info.Mode().IsRegular(){downloaded=true;diskSize=info.Size();hasDiff=f.Size>0&&diskSize!=int64(f.Size)}}}
 		candidates := make([]string, 0, 5)
 		if matchedProv != nil {
 			if matchedProv.Path != "" {
@@ -131,6 +123,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, cand := range candidates {
+			if downloaded {break}
 			if ok, sz, diff := checkDiskCandidate(cand, diskFiles, f.Size); ok {
 				downloaded = true
 				diskSize = sz
@@ -145,9 +138,13 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 			Path:        f.Path,
 			Category:    f.Category,
 			Behavior:    f.Behavior,
+			Format: f.Format,
+			RuleCount:f.RuleCount,
 			Size:        f.Size,
 			URL:         f.URL,
 			Applied:     isApplied,
+			Registered: matchedProv != nil,
+			ProviderName: providerName,
 			BlockQUIC:   isApplied && s.editor.HasQuicRule(appliedName),
 			Downloaded:  downloaded,
 			HasDiff:     hasDiff,
@@ -155,7 +152,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, loadedAt, lastErr := s.catalog.Status()
+	_, loadedAt, lastErr := selected.Status()
 	errMsg := ""
 	if lastErr != nil {
 		errMsg = lastErr.Error()

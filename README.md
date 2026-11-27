@@ -1,200 +1,48 @@
 # Miru
 
-<div align="center">
+Lightweight Mihomo routing manager for OpenWrt and Linux. One static Go binary, embedded web UI, no runtime Node.js or external frontend CDN in release builds.
 
-**Lightweight Mihomo Rule & MRS Manager with Embedded Web UI for OpenWrt Routers**
+## Modes
 
-[![Go Version](https://img.shields.io/github/go-mod/go-version/paintingpromisesss/miru?style=flat-square)](https://go.dev/)
-[![Release](https://img.shields.io/github/v/release/paintingpromisesss/miru?style=flat-square)](https://github.com/paintingpromisesss/miru/releases)
-[![License](https://img.shields.io/github/license/paintingpromisesss/miru?style=flat-square)](LICENSE)
+- Standalone: edits Mihomo's config.yaml and applies via its controller.
+- Nikki: edits `/etc/nikki/mixin.yaml`, reads generated runtime configuration to discover nodes, and restarts Nikki to apply. Enable mixin file content first. Restarts may briefly interrupt traffic.
 
-[Features](#features) • [Installation](#installation) • [CLI Flags](#configuration--cli-flags) • [API](#api-endpoints) • [Building](#building-from-source)
+Routes, installed rulesets, Tachyon / MetaCubeX catalogs, custom domains and URLs, proxy groups and advanced controls are managed separately. Removing a route does not unregister its ruleset. Config edits have backup and attempted rollback on failure.
 
-</div>
+## Install or upgrade
 
----
-
-**Miru** is a self-contained, ultra-lightweight rule manager designed for the **Mihomo** (Clash.Meta) core running on resource-constrained embedded Linux systems and OpenWrt routers.
-
-It provides a modern, fast Web UI embedded directly into a single static Go binary without third-party web frameworks, heavy runtimes, or external build steps.
-
----
-
-## Features
-
-- **Zero-Dependency Core**: Built purely on Go's standard library (`net/http`, `embed`) and `gopkg.in/yaml.v3`. No Gin, Fiber, Chi, or Node.js required.
-- **Embedded Web UI**: Dark modern UI built with pure Vanilla JS and Tailwind CDN compiled directly into the binary via `//go:embed`.
-- **Lossless YAML AST Manipulation**: Uses `yaml.Node` to read and edit `/etc/mihomo/config.yaml`. Formatting, custom indentation, and inline comments are strictly preserved.
-- **Remote MRS Catalog**: Fetches and memory-caches available `.mrs` rulesets (MetaCubeX/meta-rules-dat) using the GitHub Trees API to stay well clear of rate limits.
-- **Strict Rule Placement**: Automatically registers new `rule-providers` entries and places `RULE-SET,<name>,<group>` directives strictly before the final `MATCH` fallback rule.
-- **Custom Rule Support**: Add custom `.mrs` rulesets from any URL with configurable behavior (`domain`, `ipcidr`, `classical`).
-- **Disk Synchronization**: Scans the local rules directory (`/etc/mihomo/rules/`) to show downloaded file status, and optionally deletes `.mrs` binaries upon rule removal.
-- **Seamless Hot-Reload**: Triggers `PUT /configs?force=true` on the Mihomo controller upon changes, updating rules without dropping active user connections.
-
----
-
-## Supported Router Platforms
-
-| Platform / SoC | Architecture | Typical Devices |
-|---|---|---|
-| MediaTek Filogic 820 / 830, Rockchip RK35xx | `linux/arm64` | GL.iNet MT3000, Netis NX31, NanoPi R5S, RPi 4/5 |
-| MediaTek MT7621, MT7628, MT7620 | `linux/mipsle` (`GOMIPS=softfloat`) | Xiaomi R3G / 4A Gigabit, Keenetic, DIR-615 |
-| Atheros AR7xxx, AR9xxx, QCA95xx | `linux/mips` (`GOMIPS=softfloat`) | TP-Link Archer C7, WR1043ND |
-| Cortex-A7, Cortex-A9 | `linux/arm` (ARMv7) | Linksys WRT1900AC, ASUS RT-AC86U |
-| x86 / x86-64 | `linux/amd64` | Intel N100 / J4125 Mini PCs, PC Engines APU, Proxmox |
-
-> [!NOTE]
-> All MIPS builds are compiled with `GOMIPS=softfloat` to prevent `Illegal instruction` crashes on popular routers lacking hardware FPU units.
-
----
-
-## Installation
-
-### Automated Installation (Recommended)
-
-Run directly on your router or server:
-
-**OpenWrt (Routers):**
-```sh
-wget -O /tmp/install.sh https://raw.githubusercontent.com/paintingpromisesss/miru/main/scripts/install.sh && sh /tmp/install.sh
-```
-
-**Linux (Debian, Ubuntu, Arch, CentOS):**
-```sh
-curl -fsSL https://raw.githubusercontent.com/paintingpromisesss/miru/main/scripts/install.sh | sudo sh
-```
-
-### UPX Compressed Variant (Low Storage)
-
-For devices with limited flash memory (16MB/32MB routers), specify `MIRU_UPX=1`:
-
-**OpenWrt:**
-```sh
-wget -O /tmp/install.sh https://raw.githubusercontent.com/paintingpromisesss/miru/main/scripts/install.sh && MIRU_UPX=1 sh /tmp/install.sh
-```
-
-**Linux:**
-```sh
-curl -fsSL https://raw.githubusercontent.com/paintingpromisesss/miru/main/scripts/install.sh | sudo MIRU_UPX=1 sh
-```
-
-### Build Variants Comparison
-
-| Variant | Binary Size | RAM Usage | Notes |
-|---|---|---|---|
-| **Standard** | ~6.5 MB | ~10–14 MB | Recommended default. Fast startup, minimal CPU overhead. |
-| **UPX-compressed** (`*-upx`) | ~2.1 MB | ~16–22 MB | ~68% smaller disk footprint. Ideal for routers with 16MB/32MB flash. |
-
----
-
-## OpenWrt Service Configuration
-
-Create an init script at `/etc/init.d/miru`:
+Stop any manually started test instance first. Download and inspect the installer before running as root:
 
 ```sh
-cat << 'EOF' > /etc/init.d/miru
-#!/bin/sh /etc/rc.common
-
-START=95
-STOP=10
-USE_PROCD=1
-
-PROG=/usr/bin/miru
-
-start_service() {
-    procd_open_instance
-    procd_set_param command "$PROG" \
-        -config /etc/mihomo/config.yaml \
-        -rules-dir /etc/mihomo/rules \
-        -port 8080 \
-        -mihomo-api http://127.0.0.1:9090
-    procd_set_param respawn
-    procd_set_param stdout 1
-    procd_set_param stderr 1
-    procd_close_instance
-}
-EOF
-
-chmod +x /etc/init.d/miru
-/etc/init.d/miru enable
-/etc/init.d/miru start
+wget -O /tmp/miru-install.sh https://raw.githubusercontent.com/paintingpromisesss/miru/main/scripts/install.sh
+MIRU_BIND=192.168.0.1 MIRU_PASSWORD='choose-a-password' sh /tmp/miru-install.sh
 ```
 
-Open your browser at `http://192.168.1.1:8080` to access the Web UI.
+The installer detects Nikki, otherwise standalone. Default bind is loopback, port 8787. Existing settings in `/etc/miru/miru.env` take precedence on upgrades. Downloads are checksum-verified and staged before stopping the old service; startup failure attempts to restore the old files. It never edits Nikki/Mihomo configuration. procd and systemd are supported. Rerun to upgrade.
 
----
+For offline installation, download VERSION, SHA256SUMS, install.sh, miru.init (or miru.service), and the architecture-specific binary from the same release into a directory. Copy it to the device and set `MIRU_ASSET_DIR` to that directory.
 
-## Configuration & CLI Flags
+Environment: MIRU_MODE, MIRU_BIND, MIRU_PORT, MIRU_PASSWORD, MIRU_NO_AUTH (explicit 1/true), MIRU_CONFIG, MIRU_RULES_DIR, MIRU_MIHOMO_API, MIRU_MIHOMO_SECRET, MIRU_GITHUB_TOKEN, MIRU_GITHUB_PROXY. MIRU_VERSION selects release; MIRU_UPX=1 selects compressed binary. Edit `/etc/miru/miru.env` and restart for changes after installation.
 
-| Flag | Default | Description |
-|---|---|---|
-| `-config` | `/etc/mihomo/config.yaml` | Path to the Mihomo configuration file |
-| `-port` | `8080` | HTTP port for the Miru Web UI and REST API |
-| `-rules-dir` | `/etc/mihomo/rules` | Directory where downloaded `.mrs` files are stored |
-| `-mihomo-api` | `http://127.0.0.1:9090` | Mihomo external controller base URL |
-| `-mihomo-secret` | `""` (auto-read) | Mihomo API secret token (automatically read from config if omitted) |
-| `-github-token` | `""` | Optional GitHub Personal Access Token to avoid rate limits |
-| `-github-proxy` | `auto` | Proxy URL for GitHub requests (`auto` reads `mixed-port`/`port` from config, `none` to disable) |
-| `-catalog-repo` | `MetaCubeX/meta-rules-dat` | GitHub repository containing `.mrs` rulesets |
-| `-catalog-ref` | `meta` | Git branch or tag in the catalog repository |
-| `-catalog-ttl` | `12h0m0s` | Duration to cache the remote ruleset tree in memory |
-
----
-
-## API Endpoints
-
-All responses are formatted in JSON (`application/json`).
-
-| Method & Path | Description |
-|---|---|
-| `GET /api/local` | Current state: parsed rules, rule-providers, proxy groups, and local disk files |
-| `GET /api/catalog` | Available remote `.mrs` rulesets with applied status (`?action=refresh` to force reload) |
-| `POST /api/rules` | Register rule-provider and append `RULE-SET` directive before `MATCH` |
-| `DELETE /api/rules` | Delete rule and provider (`?name=<name>&delete_file=true` to purge disk file) |
-| `POST /api/reload` | Manually trigger Mihomo hot-reload (`PUT /configs?force=true`) |
-| `GET /` | Embedded single-page Web UI |
-
-### Example: Adding a Rule via cURL
+HTTP Basic user: miru. Do not expose this HTTP service publicly. For trusted LAN only, explicitly opt out with MIRU_NO_AUTH=1 instead of a password. Manual start:
 
 ```sh
-curl -X POST http://127.0.0.1:8080/api/rules \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "youtube",
-    "behavior": "domain",
-    "format": "mrs",
-    "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/youtube.mrs",
-    "proxy_group": "PROXY"
-  }'
+./miru -mode nikki -bind 192.168.0.1 -port 8787 -no-auth
 ```
 
----
+OpenWrt: `/etc/init.d/miru restart`, `logread -e miru`. Linux: `systemctl restart miru`, `journalctl -u miru`.
 
-## Building from Source
+## Build
 
-Requires Go 1.22+.
+Linux arm64, armv7, amd64, mips and mipsle (softfloat). Use the Go version in go.mod. For offline UI assets:
 
 ```sh
-# Clone repository
-git clone https://github.com/paintingpromisesss/miru.git
-cd miru
-
-# Native build
-make build
-
-# Cross-compile for OpenWrt targets
-make build-linux-arm64    # ARM64 (MediaTek Filogic, RPi 4/5)
-make build-linux-mipsle   # MIPSLE (MT7621 with softfloat)
-make build-linux-mips     # MIPS Big-Endian (Atheros)
-make build-linux-armv7    # ARMv7
-make build-linux-amd64    # x86-64
-
-# Run test suite
-make test
+npx --yes --package=tailwindcss@3.4.17 tailwindcss -i web/tailwind.css -o /tmp/miru-tailwind.css --content web/index.html --minify
+node web/bundle-css.cjs /tmp/miru-tailwind.css
+go test ./...
+go build -o miru ./cmd/miru
 ```
 
----
+The CSS bundler modifies the working copy. CI checks JavaScript, Go tests, vet and ARM64 build. Optional browser smoke test: `npm install --no-save --no-package-lock playwright@1.56.1`, `npx playwright install chromium`, `node web/browser-smoke.cjs` (after CSS bundling).
 
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
+MIT License.

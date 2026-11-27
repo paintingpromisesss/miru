@@ -15,9 +15,12 @@ type YAMLEditor struct {
 	mu   sync.RWMutex
 	path string
 	node *yaml.Node
+	mode string
 }
 
-func NewYAMLEditor(path string) (*YAMLEditor, error) {
+func NewYAMLEditor(path string) (*YAMLEditor, error) { return NewModeEditor(path,"standalone") }
+
+func NewModeEditor(path, mode string) (*YAMLEditor, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config file %q: %w", path, err)
@@ -43,6 +46,7 @@ func NewYAMLEditor(path string) (*YAMLEditor, error) {
 	return &YAMLEditor{
 		path: path,
 		node: &node,
+		mode: mode,
 	}, nil
 }
 
@@ -65,17 +69,25 @@ func (e *YAMLEditor) Save() error {
 	dir := filepath.Dir(e.path)
 	tmpFile, err := os.CreateTemp(dir, "mihomo-cfg-*.tmp")
 	if err != nil {
-		if writeErr := os.WriteFile(e.path, buf.Bytes(), 0644); writeErr != nil {
-			return fmt.Errorf("write config fallback: %w", writeErr)
-		}
-		return nil
+		return fmt.Errorf("create temp config: %w", err)
 	}
 	tmpName := tmpFile.Name()
+	defer os.Remove(tmpName)
+	if info, err := os.Stat(e.path); err == nil {
+		if err := tmpFile.Chmod(info.Mode().Perm() & 0600); err != nil {
+			tmpFile.Close()
+			return fmt.Errorf("secure temp config: %w", err)
+		}
+	}
 
 	if _, err := tmpFile.Write(buf.Bytes()); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpName)
 		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("sync temp config: %w", err)
 	}
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpName)
@@ -83,11 +95,7 @@ func (e *YAMLEditor) Save() error {
 	}
 
 	if err := os.Rename(tmpName, e.path); err != nil {
-		if writeErr := os.WriteFile(e.path, buf.Bytes(), 0644); writeErr != nil {
-			os.Remove(tmpName)
-			return fmt.Errorf("rename/write config: %w", writeErr)
-		}
-		os.Remove(tmpName)
+		return fmt.Errorf("replace config atomically: %w", err)
 	}
 
 	return nil
@@ -100,7 +108,12 @@ func (e *YAMLEditor) getDocRoot() *yaml.Node {
 	return nil
 }
 
+func (e *YAMLEditor) sectionKey(key string) string {
+	if e.mode == "nikki" && (key == "rules" || key == "proxy-groups" || key == "proxies") { return "nikki-"+key }; return key
+}
+
 func (e *YAMLEditor) readSection(key string) *yaml.Node {
+	key = e.sectionKey(key)
 	root := e.getDocRoot()
 	if root == nil || root.Kind != yaml.MappingNode {
 		return nil
@@ -114,6 +127,7 @@ func (e *YAMLEditor) readSection(key string) *yaml.Node {
 }
 
 func (e *YAMLEditor) ensureSection(key string, defaultKind yaml.Kind, defaultTag string) *yaml.Node {
+	key = e.sectionKey(key)
 	root := e.getDocRoot()
 	if root == nil {
 		root = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}

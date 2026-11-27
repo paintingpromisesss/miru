@@ -32,7 +32,7 @@ func readDomainSet(r io.Reader) ([]string, error) {
 	if err := binary.Read(r, binary.BigEndian, &length); err != nil {
 		return nil, err
 	}
-	if length < 1 {
+	if length < 1 || length > maxPreviewMemory/8 {
 		return nil, errors.New("invalid leaves length")
 	}
 	ds.leaves = make([]uint64, length)
@@ -45,7 +45,7 @@ func readDomainSet(r io.Reader) ([]string, error) {
 	if err := binary.Read(r, binary.BigEndian, &length); err != nil {
 		return nil, err
 	}
-	if length < 1 {
+	if length < 1 || length > maxPreviewMemory/8 {
 		return nil, errors.New("invalid labelBitmap length")
 	}
 	ds.labelBitmap = make([]uint64, length)
@@ -58,7 +58,7 @@ func readDomainSet(r io.Reader) ([]string, error) {
 	if err := binary.Read(r, binary.BigEndian, &length); err != nil {
 		return nil, err
 	}
-	if length < 1 {
+	if length < 1 || length > maxPreviewMemory/8 {
 		return nil, errors.New("invalid labels length")
 	}
 	ds.labels = make([]byte, length)
@@ -69,7 +69,7 @@ func readDomainSet(r io.Reader) ([]string, error) {
 	ds.selects, ds.ranks = bitmap.IndexSelect32R64(ds.labelBitmap)
 
 	var rawKeys []string
-	ds.traverse(0, 0, nil, &rawKeys)
+	if !ds.traverse(0, 0, nil, &rawKeys) { return nil, errors.New("invalid or oversized domain trie") }
 	slices.Sort(rawKeys)
 
 	// Remove trie internal markers (+.xxx)
@@ -85,17 +85,22 @@ func readDomainSet(r io.Reader) ([]string, error) {
 }
 
 func (ds *domainSet) traverse(nodeID, bmIdx int, currentKey []byte, rawKeys *[]string) bool {
+	if nodeID < 0 || nodeID >= len(ds.leaves)*64 || bmIdx < 0 || bmIdx >= len(ds.labelBitmap)*64 || len(currentKey) > 512 { return false }
 	if getBit(ds.leaves, nodeID) != 0 {
+		if len(*rawKeys) >= maxPreviewRules { return false }
 		*rawKeys = append(*rawKeys, reverseRunes(string(currentKey)))
 	}
 
 	for ; ; bmIdx++ {
+		if bmIdx >= len(ds.labelBitmap)*64 { return false }
 		if getBit(ds.labelBitmap, bmIdx) != 0 {
 			return true
 		}
+		if bmIdx-nodeID < 0 || bmIdx-nodeID >= len(ds.labels) { return false }
 		nextLabel := ds.labels[bmIdx-nodeID]
 		currentKey = append(currentKey, nextLabel)
 		nextNodeID := countZeros(ds.labelBitmap, ds.ranks, bmIdx+1)
+		if nextNodeID <= nodeID || nextNodeID > len(ds.labels) { return false }
 		nextBmIdx := selectIthOne(ds.labelBitmap, ds.ranks, ds.selects, nextNodeID-1) + 1
 		if !ds.traverse(nextNodeID, nextBmIdx, currentKey, rawKeys) {
 			return false
