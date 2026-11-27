@@ -282,10 +282,7 @@ function showToast(message, type = 'info') {
 }
 
 function escapeHtml(str) {
-  if (!str) return '';
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
+  return String(str ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
 }
 
 function formatBytes(bytes) {
@@ -721,6 +718,10 @@ function updateCatalogTable() {
   const pag = document.getElementById('cat-pagination');
   if (!tbody) return;
 
+  if (state.catalogSyncError && state.catalog.length === 0 && !state.catalogLoading) {
+    tbody.innerHTML=`<tr><td colspan="6" class="py-12 text-center text-zinc-400">Catalog unavailable: ${escapeHtml(state.catalogSyncError)}. Use the refresh button to retry.</td></tr>`;
+    if(pag)pag.innerHTML="";return;
+  }
   if (state.catalogLoading && state.catalog.length === 0) {
     tbody.innerHTML = `
       <tr>
@@ -806,16 +807,16 @@ function updateCatalogTable() {
           </button>
           ${item.applied ? `
             <button data-edit-rule="${escapeHtml(item.applied_name || item.name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">
-              Edit
+              Edit routing
             </button>
             <button data-remove-name="${escapeHtml(item.applied_name || item.name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">
-              Remove
+              Unregister
             </button>
           ` : `
             <button data-add-path="${escapeHtml(item.path)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded transition-colors shadow-sm font-semibold">
-              Add Rule
+              ${item.registered ? "Route" : "Install & route"}
             </button>
-            ${item.registered ? `<button data-remove-name="${escapeHtml(item.provider_name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">Remove</button>` : ''}
+            ${item.registered ? `<button data-remove-name="${escapeHtml(item.provider_name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">Unregister</button>` : ''}
           `}
         </td>
       </tr>
@@ -1669,7 +1670,7 @@ function renderSettingsDirectives(s) {
     ${providers.length?providers.map(p=>{
       const targets=routeTargets(p.name);
       const path=(p.path||'').replace(/^\.\//,'').replace(/^(ruleset|rules)\//,'');
-      const file=(s.disk_files||[]).find(f=>f.name===path||f.name===p.path);
+      const file=(s.disk_files||[]).find(f=>f.name===path||f.name===p.path||(s.rules_dir&&p.path===s.rules_dir.replace(/\/$/,"")+"/"+f.name));
       return `<tr><td class="px-4 py-3"><strong class="font-mono text-zinc-200">${escapeHtml(p.name)}</strong><div class="miru-note truncate max-w-sm" title="${escapeHtml(p.url||'')}">${escapeHtml(p.url||p.path||'')}</div></td><td class="px-4 py-3">${targets.length?targets.map(getTargetBadge).join(' '):'<span class="miru-muted">Not routed</span>'}</td><td class="px-4 py-3 text-zinc-400">${escapeHtml(p.behavior)} · ${escapeHtml(p.format)}</td><td class="px-4 py-3 text-zinc-400">${file?formatBytes(file.size):'Not cached'}</td><td class="px-4 py-3 text-right whitespace-nowrap"><button class="miru-button" data-preview-rule="${escapeHtml(p.name)}" data-preview-url="${escapeHtml(p.url||'')}">View</button> <button class="miru-button" data-edit-rule="${escapeHtml(p.name)}">${targets.length?'Edit routing':'Route'}</button> <button class="miru-button miru-danger" data-delete-rule="${escapeHtml(p.name)}">Unregister</button></td></tr>`;
     }).join(''):'<tr><td colspan="5" class="px-4 py-12 text-center text-zinc-400">No matching installed rulesets. Browse the catalog to add one.</td></tr>'}
     </tbody></table></div>
@@ -2520,7 +2521,7 @@ function confirmDeleteRawRule(index, ruleStr) {
       </p>
       <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
         <button id="modal-del-raw-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
-        <button id="modal-del-raw-confirm" class="h-8 px-3 rounded-md text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors">Delete Rule</button>
+        <button id="modal-del-raw-confirm" class="h-8 px-3 rounded-md text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors">Remove route</button>
       </div>
     </div>
   `;
@@ -2548,7 +2549,7 @@ function confirmDeleteRawRule(index, ruleStr) {
     } catch (err) {
       showToast(err.message, 'error');
       btn.disabled = false;
-      btn.textContent = 'Delete Rule';
+      btn.textContent = 'Remove route';
     }
   };
 }

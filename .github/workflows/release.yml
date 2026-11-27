@@ -42,6 +42,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Bundle local CSS
+        run: |
+          npx --yes --package=tailwindcss@3.4.17 tailwindcss -i web/tailwind.css -o /tmp/miru-tailwind.css --content web/index.html --minify
+          node web/bundle-css.cjs /tmp/miru-tailwind.css
+
       - name: Install UPX
         run: sudo apt-get update && sudo apt-get install -y upx
 

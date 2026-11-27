@@ -214,3 +214,7 @@ HTTP Basic login: miru / MIRU_PASSWORD. Use a trusted LAN or SSH tunnel; do not 
 Catalog picker offers Tachyon (reads the raw manifest) and MetaCubeX. Default catalog in Nikki is Tachyon. Custom URL rulesets and the Settings raw rules editor can route individual domains to any discovered group or node. Only selected providers are registered. Nikki's inherited subscription rules are not edited by Miru.
 
 The **Custom domains** button adds one or more DOMAIN-SUFFIX / DOMAIN rules in one transaction. ARM64 test artifacts are available from successful CI runs. The test binary can be started directly via SSH before changing the installed service. Preview downloads only public HTTP(S) destinations.
+
+### Web UI assets
+
+CI and release builds compile Tailwind into the embedded HTML so the router does not load external scripts or fonts. For an offline-ready manual build, run `npx --yes --package=tailwindcss@3.4.17 tailwindcss -i web/tailwind.css -o /tmp/miru-tailwind.css --content web/index.html --minify` and `node web/bundle-css.cjs /tmp/miru-tailwind.css` before `go build`. This modifies the working copy of `web/index.html`; restore the source after building.
