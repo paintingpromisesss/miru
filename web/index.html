@@ -50,62 +50,78 @@ tailwind.config = {
   ::-webkit-scrollbar-track { background: #09090b; }
   ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+  :root { color-scheme: dark; }
+  body { font-size: 14px; }
+  .app-shell { max-width: 1500px; margin: 0 auto; width: 100%; }
+  .app-nav { display:flex; gap:6px; flex-wrap:wrap; padding: 12px 0; border-bottom:1px solid #27272a; }
+  .tab-btn { display:flex; align-items:center; gap:7px; padding:9px 14px; border:1px solid transparent; border-radius:7px; color:#a1a1aa; font-size:13px; font-weight:500; white-space:nowrap; }
+  .tab-btn:hover { background:#18181b; color:#fafafa; }
+  .tab-btn[aria-current="page"] { background:#27272a; border-color:#3f3f46; color:#fafafa; }
+  .nav-count { color:#a1a1aa; font-size:11px; font-variant-numeric:tabular-nums; }
+  .page-heading { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; padding: 6px 0 19px; }
+  .page-heading h1 { font-size:24px; font-weight:650; letter-spacing:-.035em; line-height:1.3; }
+  .page-heading p { margin-top:5px; color:#a1a1aa; font-size:13px; line-height:1.6; max-width:75ch; }
+  .page-tools { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .miru-button { font-size:13px; font-weight:500; min-height:34px; padding:7px 12px; border:1px solid #3f3f46; border-radius:6px; background:#18181b; color:#e4e4e7; white-space:nowrap; }
+  .miru-button:hover { background:#27272a; }
+  .miru-primary { background:#fafafa; color:#18181b; border-color:#fafafa; font-weight:600; }
+  .miru-primary:hover { background:#d4d4d8; }
+  .miru-danger { color:#fca5a5; }
+  .miru-summary { display:flex; flex-wrap:wrap; gap:8px 24px; align-items:center; border:1px solid #27272a; background:#111113; padding:12px 16px; border-radius:8px; font-size:13px; margin-bottom:16px; }
+  .miru-summary strong { color:#fafafa; font-weight:600; }
+  .miru-muted { color:#a1a1aa; }
+  .miru-note { color:#a1a1aa; font-size:12px; line-height:1.55; }
+  .miru-scroll { overflow-x:auto; }
+  .miru-scroll table { min-width:740px; }
+  main table thead th { font-size:12px; font-weight:500; text-transform:none; white-space:nowrap; }
+  main table tbody td { font-size:13px; padding-top:12px!important; padding-bottom:12px!important; }
+  main table button { font-size:12px!important; min-height:30px; }
+  main table tbody tr { border-bottom:1px solid #242428; }
+  main table tbody tr:last-child { border-bottom:0; }
+  #modal-container > div { max-height:90vh; overflow:auto; }
+  #modal-container h3 { font-size:16px; }
+  #modal-container label { font-size:12px; }
+  #modal-container input:not([type=checkbox]):not([type=radio]), #modal-container select, #modal-container textarea { font-size:13px; }
+  #modal-container button { font-size:12px; }
+  #apply-indicator { color:#a1a1aa; font-size:12px; min-height:20px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline:2px solid #a1a1aa; outline-offset:2px; }
+  @media (max-width:720px) { .app-nav { gap:4px; } .tab-btn { padding:8px 10px; font-size:12px; } .page-heading h1 { font-size:21px; } .miru-summary { gap:8px 14px; } }
 </style>
 </head>
 <body class="min-h-screen flex flex-col font-sans selection:bg-zinc-800 selection:text-zinc-50">
 
-<header class="w-full border-b border-zinc-800 bg-zinc-950/90 backdrop-blur sticky top-0 z-30">
-  <div class="w-full px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <div class="w-7 h-7 rounded-md bg-zinc-100 text-zinc-950 flex items-center justify-center font-bold text-sm tracking-tighter shadow-sm">
-        M
-      </div>
-      <span class="font-semibold text-sm tracking-tight text-zinc-100 mr-0.5">Miru</span><span id="miru-mode" class="text-xs text-zinc-500"></span>
-      <select id="catalog-source" onchange="state.selectedCategories?.clear(); state.selectedBehaviors?.clear(); fetchCatalog(false)" class="bg-zinc-900 text-zinc-200 rounded px-2 py-1 text-xs"><option value="default">Default catalog</option><option value="tachyon">Tachyon</option><option value="metacubex">MetaCubeX</option></select>
-
-      <div id="card-mihomo-status" class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs cursor-pointer hover:border-zinc-700 transition-all duration-300 ease-out select-none group shadow-sm" title="Click to ping Mihomo API">
-        <span id="stat-mihomo-dot" class="w-2 h-2 rounded-full bg-zinc-500 animate-pulse flex-shrink-0 transition-colors duration-200"></span>
-        <span id="stat-mihomo-status" class="text-xs font-medium text-zinc-300 transition-colors duration-200 whitespace-nowrap">Checking...</span>
-        <span id="stat-mihomo-version" class="overflow-hidden whitespace-nowrap transition-all duration-300 ease-out max-w-0 opacity-0 text-[10px] font-mono rounded bg-zinc-800/90 text-zinc-300 border border-transparent leading-tight flex items-center justify-center"></span>
-        <svg id="stat-mihomo-ping-icon" class="w-2.5 h-2.5 text-zinc-500 group-hover:text-zinc-300 transition-colors ml-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+<header class="w-full border-b border-zinc-800 bg-zinc-950">
+  <div class="app-shell px-4 sm:px-6 py-3 flex items-center justify-between gap-3 flex-wrap">
+    <div class="flex items-center gap-3 flex-wrap">
+      <div class="w-8 h-8 rounded-md bg-zinc-100 text-zinc-950 flex items-center justify-center font-bold text-sm">M</div>
+      <span class="font-semibold text-base tracking-tight text-zinc-100">Miru</span>
+      <span id="miru-mode" class="text-xs text-zinc-400 border border-zinc-800 rounded px-2 py-1"></span>
+      <div id="card-mihomo-status" class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs cursor-pointer" title="Check core status">
+        <span id="stat-mihomo-dot" class="w-2 h-2 rounded-full bg-zinc-500"></span>
+        <span id="stat-mihomo-status" class="text-xs font-medium text-zinc-300">Checking...</span>
+        <span id="stat-mihomo-version" class="overflow-hidden whitespace-nowrap text-[10px] font-mono text-zinc-400"></span>
+        <svg id="stat-mihomo-ping-icon" class="w-3 h-3 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
       </div>
     </div>
-
-    <div class="flex items-center gap-2">
-      <button id="btn-toggle-quic" title="Toggle global UDP port 443 block for all traffic" class="h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded-md transition-all flex items-center gap-2 shadow-sm">
-        <span id="global-quic-indicator" class="w-2 h-2 rounded-full bg-zinc-600 transition-colors"></span>
-        <span id="global-quic-text">Block All QUIC</span>
-      </button>
-
-      <button id="btn-custom-domains" class="h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 text-zinc-200 rounded-md">Custom domains</button>
-      <button id="btn-custom-rule" class="h-8 px-3 text-xs font-medium border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 rounded-md transition-colors flex items-center gap-1.5 shadow-sm">
-        <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        Custom Ruleset
-      </button>
-
-      <button id="btn-reload-mihomo" class="h-8 px-3 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded-md transition-colors flex items-center gap-1.5 shadow-sm font-semibold">
+    <div class="flex items-center gap-2 flex-wrap">
+      <span id="apply-indicator" role="status" aria-live="polite"></span>
+      <button id="btn-reload-mihomo" class="miru-button flex items-center gap-2">
         <svg id="reload-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        Reload Core
+        <span id="reload-label">Apply configuration</span>
       </button>
     </div>
   </div>
 </header>
 
-<div class="w-full px-6 py-6 flex-1 space-y-6">
-
-  <div class="border-b border-zinc-800">
-    <nav class="flex space-x-6 -mb-px" id="tabs">
-      <button data-tab="catalog" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-zinc-100 text-zinc-100 font-semibold">
-        <span>Rules Catalog</span>
-      </button>
-      <button data-tab="settings" class="tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700">
-        <span>Settings</span>
-        <span id="tab-count-settings" class="hidden px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700/50">0</span>
-      </button>
-    </nav>
-  </div>
-
-  <main id="tab-content" class="w-full"></main>
+<div class="app-shell px-4 sm:px-6 flex-1">
+  <nav class="app-nav" aria-label="Main navigation">
+    <button data-tab="routes" class="tab-btn" aria-current="page">Routes <span id="nav-routes-count" class="nav-count"></span></button>
+    <button data-tab="lists" class="tab-btn">Rulesets <span id="nav-lists-count" class="nav-count"></span></button>
+    <button data-tab="groups" class="tab-btn">Proxy groups <span id="nav-groups-count" class="nav-count"></span></button>
+    <button data-tab="advanced" class="tab-btn">Advanced</button>
+  </nav>
+  <main id="tab-content" class="w-full py-5"></main>
 </div>
 
 <footer class="border-t border-zinc-800/80 py-4 px-6 text-xs text-zinc-500 flex items-center justify-between">
@@ -118,13 +134,19 @@ tailwind.config = {
 
 <script>
 async function checkedFetch(url, options) {
-  const r = await fetch(url, options);
-  if (!r.ok) { const data = await r.json().catch(() => ({})); throw new Error(data.error || `HTTP ${r.status}`); }
-  return r;
+  const mutation=options?.method && options.method!=='GET';
+  const indicator=document.getElementById('apply-indicator');
+  if(mutation && document.body.dataset.applying==='true') throw new Error('Configuration is already being applied');
+  if(mutation){document.body.dataset.applying='true';indicator.textContent='Applying configuration…';}
+  try {
+    const r=await fetch(url,{cache:'no-store',...options});
+    if(!r.ok){const data=await r.json().catch(()=>({}));throw new Error(data.error||`HTTP ${r.status}`);}
+    return r;
+  }finally{if(mutation){delete document.body.dataset.applying;indicator.textContent='';}}
 }
 const API = {
   getLocal: () => checkedFetch('/api/local').then(r => r.json()),
-  getCatalog: (refresh = false) => checkedFetch('/api/catalog?source=' + encodeURIComponent(document.getElementById('catalog-source').value) + (refresh ? '&action=refresh' : '')).then(r => r.json()),
+  getCatalog: (refresh = false) => checkedFetch('/api/catalog?source=' + encodeURIComponent(state.catalogSource) + (refresh ? '&action=refresh' : '')).then(r => r.json()),
   addRule: (data) => checkedFetch('/api/rules', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -202,8 +224,14 @@ const API = {
 };
 
 let state = {
-  currentTab: 'catalog',
-  settingsSubTab: 'groups', // 'groups' | 'providers' | 'rules' | 'directives'
+  currentTab: 'settings',
+  nav: 'routes',
+  settingsSubTab: 'rules',
+  listView: 'installed',
+  catalogSource: 'default',
+  catalogRequest: 0,
+  installedSearch: '',
+  installedFilter: 'all',
   groupSearch: '',
   groupTypeFilter: 'all',
   providerSearch: '',
@@ -269,18 +297,20 @@ function formatBytes(bytes) {
 }
 
 function setTab(tab) {
-  state.currentTab = tab;
+  state.nav = tab;
+  state.currentTab = tab === 'lists' && state.listView === 'catalog' ? 'catalog' : 'settings';
+  state.settingsSubTab = ({routes:'rules', lists:'directives', groups:'groups', advanced:'providers'})[tab] || 'rules';
   document.querySelectorAll('.tab-btn').forEach(btn => {
-    const active = btn.dataset.tab === tab;
-    btn.className = `tab-btn pb-2.5 text-xs font-medium border-b-2 transition-colors flex items-center gap-2 ${
-      active
-        ? 'border-zinc-100 text-zinc-100 font-semibold'
-        : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
-    }`;
+    if (btn.dataset.tab === tab) btn.setAttribute('aria-current','page');
+    else btn.removeAttribute('aria-current');
   });
   render();
+  if (state.currentTab === 'catalog') fetchCatalog(false);
 }
-
+function openCatalog() {
+  state.listView = 'catalog';
+  setTab('lists');
+}
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => setTab(btn.dataset.tab));
 });
@@ -289,7 +319,8 @@ async function fetchLocal() {
   try {
     const data = await API.getLocal();
     state.local = data;
-    document.getElementById("miru-mode").textContent = data.mode || "standalone";
+    document.getElementById("miru-mode").textContent = data.mode === "nikki" ? "Nikki" : "Standalone";
+    document.getElementById("reload-label").textContent = data.mode === "nikki" ? "Restart Nikki" : "Reload Mihomo";
     updateStats();
   } catch (err) {
     showToast('Failed to load local config: ' + err.message, 'error');
@@ -382,6 +413,7 @@ function updateCatalogSyncStatusUI() {
 }
 
 async function fetchCatalog(refresh = false) {
+  const request=++state.catalogRequest;
   state.catalogLoading = true;
   state.catalogSyncError = null;
   updateCatalogSyncStatusUI();
@@ -392,6 +424,7 @@ async function fetchCatalog(refresh = false) {
   }
   try {
     const res = await API.getCatalog(refresh);
+    if(request!==state.catalogRequest)return;
     state.catalog = res.items || [];
     state.catalogMap = {};
     for (let i = 0; i < state.catalog.length; i++) {
@@ -403,9 +436,11 @@ async function fetchCatalog(refresh = false) {
     state.catalogWarning = res.warning || '';
     state.catalogSyncError = null;
   } catch (err) {
+    if(request!==state.catalogRequest)return;
     state.catalogSyncError = err.message || 'Sync failed';
     showToast('Catalog load error: ' + err.message, 'error');
   } finally {
+    if(request!==state.catalogRequest)return;
     state.catalogLoading = false;
     const refreshIcon = document.getElementById('cat-refresh-icon');
     if (refreshIcon) refreshIcon.classList.remove('spin');
@@ -499,30 +534,45 @@ function renderMihomoStatus(status) {
 
 function updateStats() {
   if (!state.local) return;
-  const settingsBadge = document.getElementById('tab-count-settings');
-  if (settingsBadge) {
-    const totalItems = (state.local.proxy_group_entries || []).length +
-                       (state.local.proxy_providers || []).length +
-                       (state.local.rules || []).length;
-    settingsBadge.textContent = totalItems;
-    settingsBadge.classList.remove('hidden');
-  }
-
-  if (state.local.mihomo_status) {
-    renderMihomoStatus(state.local.mihomo_status);
-  }
+  const s=state.local;
+  for(const [id,n] of [['nav-routes-count',(s.rules||[]).length],['nav-lists-count',(s.rule_providers||[]).length],['nav-groups-count',(s.proxy_group_entries||[]).length]]) document.getElementById(id).textContent=n;
+  if (s.mihomo_status) renderMihomoStatus(s.mihomo_status);
   updateGlobalQuicUI();
 }
-
+function pageHeading(title,description,tools='') {
+  return `<div class="page-heading"><div><h1>${title}</h1><p>${description}</p></div><div class="page-tools">${tools}</div></div>`;
+}
+function listSwitcher() {
+  return `<div class="page-tools mb-4"><button class="miru-button ${state.listView==='installed'?'miru-primary':''}" data-list-view="installed">Installed</button><button class="miru-button ${state.listView==='catalog'?'miru-primary':''}" data-list-view="catalog">Browse catalog</button></div>`;
+}
+function routeTargets(name) {
+  return (state.local?.rules||[]).map(parseMihomoRule).filter(r=>r.type==='RULE-SET' && r.payload===name).map(r=>r.target).filter((v,i,a)=>a.indexOf(v)===i);
+}
 function render() {
-  const content = document.getElementById('tab-content');
-  if (state.currentTab === 'catalog') {
-    content.innerHTML = renderCatalogView();
-    bindCatalogEvents();
-  } else if (state.currentTab === 'settings') {
-    content.innerHTML = renderSettingsView();
-    bindSettingsEvents();
+  const content=document.getElementById('tab-content');
+  if (!state.local) {
+    content.innerHTML='<div class="miru-note py-12">Configuration not loaded. <button id="retry-local" class="miru-button">Retry</button></div>';
+    document.getElementById('retry-local').onclick=async()=>{await fetchLocal();render();};
+    return;
   }
+  const routeTools='<button id="route-browse" class="miru-button miru-primary">+ Add ruleset</button><button id="route-domains" class="miru-button">+ Custom domains</button>';
+  const listTools='<button id="list-custom" class="miru-button">+ Custom ruleset URL</button>';
+  const headings={
+    routes:pageHeading('Routes','Traffic is evaluated from top to bottom. The first matching rule determines its destination.',routeTools),
+    lists:pageHeading('Rulesets','Manage installed domain and IP lists, or browse a catalog to route new services.',listTools)+listSwitcher(),
+    groups:pageHeading('Proxy groups','Choose how proxies are selected and filtered. Groups can be used as route destinations.'),
+    advanced:pageHeading('Advanced','Proxy subscription sources and global traffic controls. Changes are applied immediately.')
+  };
+  content.innerHTML=headings[state.nav]+(state.currentTab==='catalog'?renderCatalogView():renderSettingsView());
+  if(state.currentTab==='catalog')bindCatalogEvents();else bindSettingsEvents();
+  content.querySelectorAll('[data-list-view]').forEach(b=>b.onclick=()=>{state.listView=b.dataset.listView;setTab('lists');});
+  const browse=document.getElementById('route-browse');if(browse)browse.onclick=openCatalog;
+  const domains=document.getElementById('route-domains');if(domains)domains.onclick=openDomainsModal;
+  const custom=document.getElementById('list-custom');if(custom)custom.onclick=()=>openAddRuleModal(null);
+  const source=document.getElementById('catalog-source');
+  if(source)source.onchange=()=>{state.catalogSource=source.value;state.selectedCategories.clear();state.selectedBehaviors.clear();state.page=1;state.catalog=[];state.catalogMap={};fetchCatalog(false);};
+  const quic=document.getElementById('btn-toggle-quic');if(quic)quic.onclick=toggleGlobalQUIC;
+  updateGlobalQuicUI();
 }
 
 function getFilteredCatalog() {
@@ -531,6 +581,8 @@ function getFilteredCatalog() {
 
   return state.catalog.filter(item => {
     if (activeOnly && !item.applied) return false;
+    if (state.categoryFilter === "registered" && (!item.registered || item.applied)) return false;
+    if (state.categoryFilter === "available" && item.registered) return false;
     if (state.selectedCategories.size > 0 && !state.selectedCategories.has(item.category)) return false;
     if (state.selectedBehaviors.size > 0 && !state.selectedBehaviors.has(item.behavior)) return false;
     if (q && !item.name.toLowerCase().includes(q) && !item.path.toLowerCase().includes(q)) return false;
@@ -631,8 +683,11 @@ function renderCatalogView() {
         </div>
 
         <div class="flex items-center gap-2 flex-wrap">
+          <label class="miru-note flex items-center gap-2">Source <select id="catalog-source" class="miru-button"><option value="default" ${state.catalogSource==="default"?"selected":""}>${state.local?.mode==="nikki"?"Tachyon (default)":"Default catalog"}</option><option value="tachyon" ${state.catalogSource==="tachyon"?"selected":""}>Tachyon</option><option value="metacubex" ${state.catalogSource==="metacubex"?"selected":""}>MetaCubeX</option></select></label>
           <button data-cat-filter="all" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors ${filter === 'all' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">All (${state.catalog.length})</button>
-          <button data-cat-filter="applied" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors ${filter === 'applied' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">Active Only</button>
+          <button data-cat-filter="applied" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors ${filter === 'applied' ? 'bg-zinc-800 border-zinc-700 text-zinc-100' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">Routed</button>
+          <button data-cat-filter="registered" class="miru-button ${filter==='registered'?'miru-primary':''}">Unused</button>
+          <button data-cat-filter="available" class="miru-button ${filter==='available'?'miru-primary':''}">Not installed</button>
 
           <div id="cat-sync-wrapper" class="flex items-center">
             ${renderCatalogSyncButton()}
@@ -647,7 +702,8 @@ function renderCatalogView() {
               <th class="py-2.5 px-4">Ruleset Name</th>
               <th class="py-2.5 px-4" id="th-category">${renderCategoryFilterHeader()}</th>
               <th class="py-2.5 px-4" id="th-behavior">${renderBehaviorFilterHeader()}</th>
-              <th class="py-2.5 px-4">Size</th>
+              <th class="py-2.5 px-4">Destination</th>
+              <th class="py-2.5 px-4">Size / rules</th>
               <th class="py-2.5 px-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -668,7 +724,7 @@ function updateCatalogTable() {
   if (state.catalogLoading && state.catalog.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="5" class="py-12 text-center text-zinc-500 font-mono">
+        <td colspan="6" class="py-12 text-center text-zinc-500 font-mono">
           <div class="w-5 h-5 border-2 border-zinc-400 border-t-transparent rounded-full spin mx-auto mb-2"></div>
           Synchronizing catalog tree...
         </td>
@@ -687,7 +743,7 @@ function updateCatalogTable() {
   if (total === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="5" class="py-12 text-center text-zinc-500">
+        <td colspan="6" class="py-12 text-center text-zinc-500">
           No matching rulesets found in catalog.
         </td>
       </tr>
@@ -712,21 +768,21 @@ function updateCatalogTable() {
             <span class="font-semibold text-zinc-200">${escapeHtml(item.name)}</span>
             ${item.applied ? `
               <span class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400 font-mono">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Active${item.applied_name && item.applied_name.toLowerCase() !== item.name.toLowerCase() ? ` (${escapeHtml(item.applied_name)})` : ''}
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Routed${item.applied_name && item.applied_name.toLowerCase() !== item.name.toLowerCase() ? ` (${escapeHtml(item.applied_name)})` : ''}
               </span>
             ` : ''}
             ${item.downloaded ? (
               item.has_diff ? `
                 <span class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-400 font-mono px-1.5 py-0.2 rounded bg-amber-500/10 border border-amber-500/20" title="Local file size (${formatBytes(item.disk_size)}) differs from repository (${formatBytes(item.size)})">
-                  <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Downloaded (diff)
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Cached (diff)
                 </span>
               ` : `
                 <span class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400 font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 border border-emerald-500/20" title="Downloaded (${formatBytes(item.disk_size || item.size)})">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Downloaded
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Cached
                 </span>
               `
             ) : ''}
-            ${item.registered && !item.applied ? `<span class="text-[10px] text-zinc-400">Registered · not routed</span>` : ''}
+            ${item.registered && !item.applied ? `<span class="text-[10px] text-zinc-400">Installed · unused</span>` : ''}
             ${item.block_quic ? `
               <span class="inline-flex items-center text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC</span>
             ` : ''}
@@ -741,6 +797,7 @@ function updateCatalogTable() {
           }">${escapeHtml(item.category)}</span>
         </td>
         <td class="py-2.5 px-4 font-mono text-zinc-400">${escapeHtml(item.behavior)}</td>
+        <td class="py-2.5 px-4">${item.applied ? routeTargets(item.applied_name || item.name).map(getTargetBadge).join(" ") || "Routed" : `<span class="miru-muted">Not routed</span>`}</td>
         <td class="py-2.5 px-4 font-mono text-zinc-400">${item.size ? formatBytes(item.size) : (item.rule_count ? item.rule_count + " rules" : "—")}</td>
         <td class="py-2.5 px-4 text-right whitespace-nowrap">
           <button data-preview-rule="${escapeHtml(item.name)}" data-preview-url="${escapeHtml(item.url)}" title="Preview ruleset contents" class="h-7 px-2 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors mr-1 inline-flex items-center gap-1">
@@ -1061,55 +1118,14 @@ function getTargetBadge(target) {
 }
 
 function renderSettingsView() {
-  if (!state.local) return '<div class="text-center py-12 text-zinc-500 font-mono">Loading configuration...</div>';
-
-  const s = state.local;
-  const subTab = state.settingsSubTab || 'groups';
-
-  const groupsCount = (s.proxy_group_entries || []).length;
-  const provCount = (s.proxy_providers || []).length;
-  const rulesCount = (s.rules || []).length;
-  const directivesCount = (s.rules || []).filter(r => r.trim().startsWith('RULE-SET,')).length;
-
-  let subContent = '';
-  if (subTab === 'groups') {
-    subContent = renderSettingsProxyGroups(s);
-  } else if (subTab === 'providers') {
-    subContent = renderSettingsProxyProviders(s);
-  } else if (subTab === 'rules') {
-    subContent = renderSettingsRules(s);
-  } else if (subTab === 'directives') {
-    subContent = renderSettingsDirectives(s);
-  }
-
-  return `
-    <div class="space-y-5 w-full">
-      <div class="flex items-center justify-between border-b border-zinc-800 pb-3 flex-wrap gap-2">
-        <div class="flex items-center gap-2 flex-wrap">
-          <button data-settings-sub="groups" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${subTab === 'groups' ? 'bg-zinc-800 border-zinc-700 text-zinc-100 font-semibold' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
-            <span>Proxy Groups</span>
-            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${subTab === 'groups' ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800 text-zinc-500'}">${groupsCount}</span>
-          </button>
-          <button data-settings-sub="providers" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${subTab === 'providers' ? 'bg-zinc-800 border-zinc-700 text-zinc-100 font-semibold' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
-            <span>Proxy Providers</span>
-            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${subTab === 'providers' ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800 text-zinc-500'}">${provCount}</span>
-          </button>
-          <button data-settings-sub="rules" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${subTab === 'rules' ? 'bg-zinc-800 border-zinc-700 text-zinc-100 font-semibold' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
-            <span>Rules Sequence</span>
-            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${subTab === 'rules' ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800 text-zinc-500'}">${rulesCount}</span>
-          </button>
-          <button data-settings-sub="directives" class="h-8 px-3 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${subTab === 'directives' ? 'bg-zinc-800 border-zinc-700 text-zinc-100 font-semibold' : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'}">
-            <span>Directives & Files</span>
-            <span class="text-[10px] font-mono px-1.5 py-0.2 rounded ${subTab === 'directives' ? 'bg-zinc-700 text-zinc-200' : 'bg-zinc-800 text-zinc-500'}">${directivesCount}</span>
-          </button>
-        </div>
-      </div>
-
-      <div id="settings-sub-content" class="w-full">
-        ${subContent}
-      </div>
-    </div>
-  `;
+  const s=state.local;
+  const subTab=state.settingsSubTab;
+  let content='';
+  if(subTab==='groups')content=renderSettingsProxyGroups(s);
+  if(subTab==='providers')content=`<div class="miru-summary"><div><strong>Global QUIC</strong><div class="miru-note">Blocks UDP 443 for all destinations. Leave off unless troubleshooting.</div></div><button id="btn-toggle-quic" class="miru-button"><span id="global-quic-indicator"></span><span id="global-quic-text">Block All QUIC</span></button></div>`+renderSettingsProxyProviders(s);
+  if(subTab==='rules')content=renderSettingsRules(s);
+  if(subTab==='directives')content=renderSettingsDirectives(s);
+  return `<div id="settings-sub-content" class="w-full">${content}</div>`;
 }
 
 function bindSettingsEvents() {
@@ -1169,7 +1185,7 @@ function renderSettingsProxyGroups(s) {
         </div>
       </div>
 
-      <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
+      <div class="miru-scroll rounded-md border border-zinc-800 bg-zinc-900/30 w-full">
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
@@ -1185,7 +1201,7 @@ function renderSettingsProxyGroups(s) {
             ${filtered.length === 0 ? `
               <tr>
                 <td colspan="6" class="py-12 text-center text-zinc-500 font-mono">
-                  ${allGroups.length === 0 ? 'No proxy groups configured in config.yaml' : 'No proxy groups matching filter criteria'}
+                  ${allGroups.length === 0 ? 'No editable proxy groups' : 'No proxy groups matching filter criteria'}
                 </td>
               </tr>
             ` : filtered.map((g, idx) => {
@@ -1215,7 +1231,9 @@ function renderSettingsProxyGroups(s) {
                       ${providers.map(u => `
                         <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-medium">use: ${escapeHtml(u)}</span>
                       `).join('')}
-                      ${proxies.length === 0 && providers.length === 0 ? `<span class="text-zinc-600 italic">None</span>` : ''}
+                      ${g.include_all_proxies ? `<span class="text-zinc-300">All subscription nodes</span>` : ""}
+                      ${g.include_all_providers ? `<span class="text-zinc-300">All proxy providers</span>` : ""}
+                      ${proxies.length === 0 && providers.length === 0 && !g.include_all_proxies && !g.include_all_providers ? `<span class="text-zinc-500">None</span>` : ""}
                     </div>
                   </td>
                   <td class="py-2.5 px-4 font-mono text-zinc-400">
@@ -1253,10 +1271,12 @@ function bindSettingsProxyGroupsEvents() {
       clearTimeout(timer);
       timer = setTimeout(() => {
         state.groupSearch = e.target.value;
+        const cursor=e.target.selectionStart;
         const subContent = document.getElementById('settings-sub-content');
         if (subContent && state.local) {
           subContent.innerHTML = renderSettingsProxyGroups(state.local);
           bindSettingsProxyGroupsEvents();
+          const next=document.getElementById('input-group-search');if(next){next.focus();next.setSelectionRange(cursor,cursor);}
         }
       }, 70);
     };
@@ -1326,7 +1346,7 @@ function renderSettingsProxyProviders(s) {
         </div>
       </div>
 
-      <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
+      <div class="miru-scroll rounded-md border border-zinc-800 bg-zinc-900/30 w-full">
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
@@ -1344,7 +1364,7 @@ function renderSettingsProxyProviders(s) {
             ${filtered.length === 0 ? `
               <tr>
                 <td colspan="8" class="py-12 text-center text-zinc-500 font-mono">
-                  ${allProviders.length === 0 ? 'No proxy providers configured in config.yaml' : 'No proxy providers matching filter criteria'}
+                  ${allProviders.length === 0 ? 'No editable proxy sources' : 'No proxy providers matching filter criteria'}
                 </td>
               </tr>
             ` : filtered.map((p, idx) => {
@@ -1408,10 +1428,12 @@ function bindSettingsProxyProvidersEvents() {
       clearTimeout(timer);
       timer = setTimeout(() => {
         state.providerSearch = e.target.value;
+        const cursor=e.target.selectionStart;
         const subContent = document.getElementById('settings-sub-content');
         if (subContent && state.local) {
           subContent.innerHTML = renderSettingsProxyProviders(state.local);
           bindSettingsProxyProvidersEvents();
+          const next=document.getElementById('input-provider-search');if(next){next.focus();next.setSelectionRange(cursor,cursor);}
         }
       }, 70);
     };
@@ -1468,10 +1490,12 @@ function renderSettingsRules(s) {
     return true;
   });
 
+  const fallback = parsedRules.find(r=>r.type==="MATCH");
   const typeOptions = ['ALL', 'RULE-SET', 'DOMAIN', 'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD', 'IP-CIDR', 'GEOIP', 'MATCH', 'OTHER'];
 
   return `
     <div class="space-y-4 w-full">
+      <div class="miru-summary"><span><strong>${allRules.length}</strong> rules</span><span><strong>${new Set(parsedRules.filter(r=>r.type==="RULE-SET").map(r=>r.payload)).size}</strong> routed lists</span><span class="miru-muted">Unmatched traffic: ${fallback?getTargetBadge(fallback.target):"No explicit MATCH"}</span></div>
       <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between w-full">
         <div class="relative w-full sm:w-72">
           <svg class="w-4 h-4 absolute left-3 top-2.5 text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
@@ -1487,19 +1511,19 @@ function renderSettingsRules(s) {
           </div>
           <button id="btn-add-raw-rule" class="h-8 px-3 text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-950 rounded-md transition-colors shadow-sm flex items-center gap-1.5 ml-auto">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Add Rule
+            Advanced rule
           </button>
         </div>
       </div>
 
-      <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
+      <div class="miru-scroll rounded-md border border-zinc-800 bg-zinc-900/30 w-full">
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
               <th class="py-2.5 px-3 w-16 text-center">Order</th>
               <th class="py-2.5 px-4 w-36">Rule Type</th>
               <th class="py-2.5 px-4">Payload / Criteria</th>
-              <th class="py-2.5 px-4">Target Proxy Group</th>
+              <th class="py-2.5 px-4">Destination</th>
               <th class="py-2.5 px-4">Flags</th>
               <th class="py-2.5 px-4 text-right">Actions</th>
             </tr>
@@ -1508,7 +1532,7 @@ function renderSettingsRules(s) {
             ${filtered.length === 0 ? `
               <tr>
                 <td colspan="6" class="py-12 text-center text-zinc-500 font-mono">
-                  ${allRules.length === 0 ? 'No rules found in config.yaml' : 'No rules match the filter criteria'}
+                  ${allRules.length === 0 ? 'No routes in the editable configuration' : 'No rules match the filter criteria'}
                 </td>
               </tr>
             ` : filtered.map((item) => {
@@ -1530,7 +1554,8 @@ function renderSettingsRules(s) {
                     ${getRuleTypeBadge(item.type)}
                   </td>
                   <td class="py-2.5 px-4 font-mono">
-                    <span class="text-zinc-200 break-all">${escapeHtml(item.payload || (item.type === 'MATCH' ? 'Match-All Outbound Traffic' : ''))}</span>
+                    <span class="text-zinc-200 break-all">${escapeHtml(item.payload || (item.type === 'MATCH' ? 'All other traffic' : ''))}</span>
+                    ${item.type==="RULE-SET"?`<button data-route-preview="${escapeHtml(item.payload)}" class="ml-2 text-zinc-400 underline">View list</button>`:""}
                   </td>
                   <td class="py-2.5 px-4">
                     ${getTargetBadge(item.target)}
@@ -1542,7 +1567,7 @@ function renderSettingsRules(s) {
                   </td>
                   <td class="py-2.5 px-4 text-right whitespace-nowrap">
                     <button data-edit-raw-rule="${idx}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">Edit</button>
-                    <button data-delete-raw-rule="${idx}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">Delete</button>
+                    <button data-delete-raw-rule="${idx}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">Remove route</button>
                   </td>
                 </tr>
               `;
@@ -1562,10 +1587,12 @@ function bindSettingsRulesEvents() {
       clearTimeout(timer);
       timer = setTimeout(() => {
         state.rulesSearch = e.target.value;
+        const cursor=e.target.selectionStart;
         const subContent = document.getElementById('settings-sub-content');
         if (subContent && state.local) {
           subContent.innerHTML = renderSettingsRules(state.local);
           bindSettingsRulesEvents();
+          const next=document.getElementById('input-rules-search');if(next){next.focus();next.setSelectionRange(cursor,cursor);}
         }
       }, 70);
     };
@@ -1617,6 +1644,7 @@ function bindSettingsRulesEvents() {
     };
   });
 
+  document.querySelectorAll('[data-route-preview]').forEach(btn=>btn.onclick=()=>{const p=(state.local.rule_providers||[]).find(p=>p.name===btn.dataset.routePreview);openPreviewModal(btn.dataset.routePreview,p?.url||'');});
   document.querySelectorAll('[data-edit-raw-rule]').forEach(btn => {
     btn.onclick = () => openRawRuleModal(parseInt(btn.dataset.editRawRule, 10));
   });
@@ -1631,192 +1659,30 @@ function bindSettingsRulesEvents() {
 }
 
 function renderSettingsDirectives(s) {
-  const rules = (s.rules || []).filter(r => r.trim().startsWith('RULE-SET,'));
-  const providersMap = {};
-  (s.rule_providers || []).forEach(p => { providersMap[p.name] = p; });
-
-  const diskMap = {};
-  (s.disk_files || []).forEach(f => { diskMap[f.name.toLowerCase()] = f; });
-
-  return `
-    <div class="space-y-6 w-full">
-      <div class="space-y-3">
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-sm font-semibold text-zinc-100">Registered Rule Directives</h2>
-            <p class="text-xs text-zinc-500">Mihomo traffic matching these sets is forwarded to target proxy groups</p>
-          </div>
-          <span class="text-xs font-mono text-zinc-400 bg-zinc-900 px-2.5 py-1 rounded border border-zinc-800">${rules.length} active directives</span>
-        </div>
-
-        <div class="rounded-md border border-zinc-800 bg-zinc-900/30 overflow-hidden w-full">
-          <table class="w-full text-left border-collapse">
-            <thead>
-              <tr class="border-b border-zinc-800 bg-zinc-900/80 text-[11px] font-medium text-zinc-400">
-                <th class="py-2.5 px-4 w-12">#</th>
-                <th class="py-2.5 px-4">Provider / Ruleset</th>
-                <th class="py-2.5 px-4">Target Group</th>
-                <th class="py-2.5 px-4">Behavior</th>
-                <th class="py-2.5 px-4">Local Binary (.mrs)</th>
-                <th class="py-2.5 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-zinc-800/60 text-xs">
-              ${rules.length === 0 ? `
-                <tr>
-                  <td colspan="6" class="py-12 text-center text-zinc-500">
-                    No active RULE-SET directives in config. Add rules from the Catalog tab or via Custom MRS.
-                  </td>
-                </tr>
-              ` : rules.map((rule, idx) => {
-                const parts = rule.split(',').map(str => str.trim());
-                const name = parts[1] || '';
-                const targetGroup = parts[2] || '';
-                const prov = providersMap[name];
-
-                const cleanPURL = prov && prov.url ? prov.url.trim().toLowerCase().replace(/\/+$/, '') : '';
-                const catItem = (state.catalog || []).find(c => {
-                  if (c.applied_name && c.applied_name.toLowerCase() === name.toLowerCase()) return true;
-                  if (c.name.toLowerCase() === name.toLowerCase()) return true;
-                  if (cleanPURL && c.url) {
-                    const cleanCURL = c.url.trim().toLowerCase().replace(/\/+$/, '');
-                    if (cleanPURL === cleanCURL) return true;
-                    if (cleanPURL.endsWith('/' + c.path.toLowerCase())) return true;
-                    if (cleanPURL.endsWith('/' + c.name.toLowerCase() + '.mrs')) return true;
-                  }
-                  return false;
-                });
-
-                let diskFile = diskMap[(name + '.mrs').toLowerCase()];
-                if (!diskFile && prov && prov.path) {
-                  const base = prov.path.split(/[\/\\]/).pop().toLowerCase();
-                  diskFile = diskMap[base];
-                }
-                if (!diskFile && prov && prov.url) {
-                  const urlBase = prov.url.split('?')[0].split('/').pop().toLowerCase();
-                  diskFile = diskMap[urlBase];
-                }
-                if (!diskFile && catItem) {
-                  diskFile = diskMap[(catItem.name + '.mrs').toLowerCase()] || diskMap[catItem.path.split('/').pop().toLowerCase()];
-                }
-
-                const isQuic = (s.quic_blocked || []).some(q => q.toLowerCase() === name.toLowerCase());
-                const hasDiff = diskFile && catItem && catItem.size > 0 && diskFile.size !== catItem.size;
-                const previewUrl = (prov && prov.url) || (catItem && catItem.url) || '';
-
-                return `
-                  <tr class="hover:bg-zinc-900/50 transition-colors">
-                    <td class="py-2.5 px-4 font-mono text-zinc-500">${idx + 1}</td>
-                    <td class="py-2.5 px-4 font-mono">
-                      <div class="flex items-center gap-2">
-                        <span class="font-semibold text-zinc-100">${escapeHtml(name)}</span>
-                        ${isQuic ? `
-                          <span class="inline-flex items-center text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">QUIC Blocked</span>
-                        ` : ''}
-                      </div>
-                      ${prov && prov.url ? `<div class="text-[11px] text-zinc-500 truncate max-w-sm">${escapeHtml(prov.url)}</div>` : ''}
-                    </td>
-                    <td class="py-2.5 px-4">
-                      ${getTargetBadge(targetGroup)}
-                    </td>
-                    <td class="py-2.5 px-4 font-mono text-zinc-400">
-                      ${prov ? escapeHtml(prov.behavior) : 'domain'}
-                    </td>
-                    <td class="py-2.5 px-4">
-                      ${diskFile ? (
-                        hasDiff ? `
-                          <div class="flex flex-col gap-0.5">
-                            <span class="inline-flex items-center gap-1.5 text-[11px] text-amber-400 font-mono">
-                              <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                              Downloaded (${formatBytes(diskFile.size)})
-                            </span>
-                            <span class="inline-flex items-center gap-1 text-[10px] text-amber-300/90 font-mono" title="Repository size: ${formatBytes(catItem.size)}">
-                              <span class="px-1 py-0.2 rounded bg-amber-500/10 border border-amber-500/20">diff with repo (${formatBytes(catItem.size)})</span>
-                            </span>
-                          </div>
-                        ` : `
-                          <span class="inline-flex items-center gap-1.5 text-[11px] text-emerald-400 font-mono">
-                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            Downloaded (${formatBytes(diskFile.size)})
-                          </span>
-                        `
-                      ) : `
-                        <span class="inline-flex items-center gap-1.5 text-[11px] text-amber-400 font-mono" title="Mihomo core has not downloaded this ruleset binary to disk yet">
-                          <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                          Pending Core Download
-                        </span>
-                      `}
-                    </td>
-                    <td class="py-2.5 px-4 text-right whitespace-nowrap">
-                      <button data-preview-rule="${escapeHtml(name)}" data-preview-url="${escapeHtml(previewUrl)}" title="Preview ruleset contents" class="h-7 px-2 text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors mr-1 inline-flex items-center gap-1">
-                        <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                        View
-                      </button>
-                      <button data-edit-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded border border-zinc-700 transition-colors mr-1">
-                        Edit
-                      </button>
-                      <button data-delete-rule="${escapeHtml(name)}" class="h-7 px-2.5 text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded border border-red-500/20 transition-colors">
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="rounded-lg border border-zinc-800 bg-zinc-900/30 p-5 space-y-3">
-        <div class="flex items-center justify-between">
-          <h3 class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Files in Rules Folder</h3>
-          <span class="text-xs font-mono text-zinc-500">${(s.disk_files || []).length} files</span>
-        </div>
-        <p class="text-xs text-zinc-500 font-mono truncate">${escapeHtml(s.rules_dir)}</p>
-        <div class="max-h-56 overflow-y-auto divide-y divide-zinc-800/60 font-mono text-xs border border-zinc-800 rounded bg-zinc-950/50">
-          ${(s.disk_files || []).length === 0 ? `
-            <div class="p-3 text-zinc-500 text-center italic">No rules downloaded yet.</div>
-          ` : s.disk_files.map(f => `
-            <div class="px-3 py-2 flex items-center justify-between">
-              <span class="text-zinc-200">${escapeHtml(f.name)}</span>
-              <div class="flex items-center gap-2">
-                <span class="text-zinc-500">${formatBytes(f.size)} · ${escapeHtml(f.mod_time)}</span>
-                <button data-preview-file="${escapeHtml(f.name)}" class="h-6 px-2 text-[11px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-zinc-100 rounded border border-zinc-800 transition-colors">View</button>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    </div>
-  `;
+  const all=s.rule_providers||[];
+  const q=state.installedSearch.toLowerCase();
+  const providers=all.filter(p=>p.name.toLowerCase().includes(q) && (state.installedFilter==='all'||(state.installedFilter==='routed')===!!routeTargets(p.name).length));
+  return `<div class="space-y-4">
+    <div class="miru-summary"><span><strong>${all.length}</strong> installed</span><span><strong>${all.filter(p=>routeTargets(p.name).length).length}</strong> routed</span><span><strong>${all.filter(p=>!routeTargets(p.name).length).length}</strong> unused</span></div>
+    <div class="page-tools"><input id="installed-search" value="${escapeHtml(state.installedSearch)}" placeholder="Search installed rulesets…" class="h-9 px-3 bg-zinc-900 border rounded-md text-sm w-72"><select id="installed-filter" class="miru-button"><option value="all" ${state.installedFilter==='all'?'selected':''}>All installed</option><option value="routed" ${state.installedFilter==='routed'?'selected':''}>Routed</option><option value="unused" ${state.installedFilter==='unused'?'selected':''}>Unused</option></select></div>
+    <div class="miru-scroll border rounded-lg"><table class="w-full text-left"><thead class="bg-zinc-900 text-zinc-400"><tr><th class="px-4 py-3">Ruleset</th><th class="px-4 py-3">Status / destination</th><th class="px-4 py-3">Format</th><th class="px-4 py-3">Cache</th><th class="px-4 py-3 text-right">Actions</th></tr></thead><tbody>
+    ${providers.length?providers.map(p=>{
+      const targets=routeTargets(p.name);
+      const path=(p.path||'').replace(/^\.\//,'').replace(/^(ruleset|rules)\//,'');
+      const file=(s.disk_files||[]).find(f=>f.name===path||f.name===p.path);
+      return `<tr><td class="px-4 py-3"><strong class="font-mono text-zinc-200">${escapeHtml(p.name)}</strong><div class="miru-note truncate max-w-sm" title="${escapeHtml(p.url||'')}">${escapeHtml(p.url||p.path||'')}</div></td><td class="px-4 py-3">${targets.length?targets.map(getTargetBadge).join(' '):'<span class="miru-muted">Not routed</span>'}</td><td class="px-4 py-3 text-zinc-400">${escapeHtml(p.behavior)} · ${escapeHtml(p.format)}</td><td class="px-4 py-3 text-zinc-400">${file?formatBytes(file.size):'Not cached'}</td><td class="px-4 py-3 text-right whitespace-nowrap"><button class="miru-button" data-preview-rule="${escapeHtml(p.name)}" data-preview-url="${escapeHtml(p.url||'')}">View</button> <button class="miru-button" data-edit-rule="${escapeHtml(p.name)}">${targets.length?'Edit routing':'Route'}</button> <button class="miru-button miru-danger" data-delete-rule="${escapeHtml(p.name)}">Unregister</button></td></tr>`;
+    }).join(''):'<tr><td colspan="5" class="px-4 py-12 text-center text-zinc-400">No matching installed rulesets. Browse the catalog to add one.</td></tr>'}
+    </tbody></table></div>
+    <details class="border rounded-lg p-4"><summary class="cursor-pointer text-sm text-zinc-300">Cached files (${(s.disk_files||[]).length})</summary><p class="miru-note mt-2">Cache files are separate from routes. Stored in ${escapeHtml(s.rules_dir||'')}</p><div class="mt-3 max-h-64 overflow-auto">${(s.disk_files||[]).map(f=>`<div class="flex justify-between gap-3 py-2 border-b text-xs"><span class="font-mono break-all">${escapeHtml(f.name)}</span><span class="miru-muted">${formatBytes(f.size)}</span></div>`).join('')||'<p class="miru-note">No cached files.</p>'}</div></details>
+  </div>`;
 }
-
 function bindSettingsDirectivesEvents() {
-  document.querySelectorAll('[data-preview-rule]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      openPreviewModal(btn.dataset.previewRule, btn.dataset.previewUrl || '');
-    });
-  });
-
-  document.querySelectorAll('[data-edit-rule]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      openEditRuleModal(btn.dataset.editRule);
-    });
-  });
-
-  document.querySelectorAll('[data-delete-rule]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      confirmDeleteRule(btn.dataset.deleteRule);
-    });
-  });
-
-  document.querySelectorAll('[data-preview-file]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const fname = btn.dataset.previewFile;
-      const ruleName = fname.replace(/\.(mrs|yaml|txt)$/i, '');
-      openPreviewModal(ruleName, '');
-    });
-  });
+  const refresh=()=>{const box=document.getElementById('settings-sub-content');box.innerHTML=renderSettingsDirectives(state.local);bindSettingsDirectivesEvents();};
+  const input=document.getElementById('installed-search');if(input)input.oninput=e=>{state.installedSearch=e.target.value;const pos=e.target.selectionStart;refresh();const next=document.getElementById('installed-search');next.focus();next.setSelectionRange(pos,pos);};
+  const filter=document.getElementById('installed-filter');if(filter)filter.onchange=e=>{state.installedFilter=e.target.value;refresh();};
+  document.querySelectorAll('[data-preview-rule]').forEach(b=>b.onclick=()=>openPreviewModal(b.dataset.previewRule,b.dataset.previewUrl||''));
+  document.querySelectorAll('[data-edit-rule]').forEach(b=>b.onclick=()=>openEditRuleModal(b.dataset.editRule));
+  document.querySelectorAll('[data-delete-rule]').forEach(b=>b.onclick=()=>confirmDeleteRule(b.dataset.deleteRule));
 }
 
 function openProxyGroupModal(groupName = null) {
@@ -2467,7 +2333,7 @@ function openRawRuleModal(index = -1) {
             </select>
           </div>
           <div>
-            <label class="block text-zinc-300 mb-1 font-medium">Target Proxy Group</label>
+            <label class="block text-zinc-300 mb-1 font-medium">Destination</label>
             <select id="modal-rule-target" class="h-9 w-full px-2.5 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 focus:border-zinc-500 focus:outline-none font-medium font-mono text-xs">
               ${allTargets.map(t => `<option value="${escapeHtml(t)}" ${t === initialTarget ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
             </select>
@@ -2646,11 +2512,11 @@ function confirmDeleteRawRule(index, ruleStr) {
   modal.innerHTML = `
     <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-sm w-full space-y-4 shadow-2xl relative" onclick="event.stopPropagation()">
       <div>
-        <h3 class="font-semibold text-sm text-zinc-100">Delete Rule #${index + 1}</h3>
+        <h3 class="font-semibold text-sm text-zinc-100">Remove route #${index + 1}</h3>
       </div>
       <p class="text-xs font-mono text-zinc-300 bg-zinc-900 p-2 rounded border border-zinc-800 break-all">${escapeHtml(ruleStr)}</p>
       <p class="text-xs text-zinc-400 leading-relaxed">
-        Are you sure you want to remove this rule line? Registered providers and cached files are kept. Use Remove in the rules catalog to unregister them as well.
+        Only this route is removed. The ruleset remains installed and can be routed again from Rulesets → Installed.
       </p>
       <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
         <button id="modal-del-raw-cancel" class="h-8 px-3 rounded-md text-xs font-medium text-zinc-300 hover:text-zinc-100 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition-colors">Cancel</button>
@@ -2714,7 +2580,7 @@ function openDomainsModal() {
     } catch(e){showToast(e.message,'error');btn.disabled=false;}
   };
 }
-document.getElementById('btn-custom-domains').addEventListener('click',openDomainsModal);
+
 
 function openAddRuleModal(preset = null) {
   if (!state.local || (state.local.proxy_groups || []).length === 0) {
@@ -2740,14 +2606,14 @@ function openAddRuleModal(preset = null) {
       <div class="flex items-center justify-between">
         <div>
           <h3 class="font-semibold text-sm text-zinc-100">${isCustom ? 'Register Custom Ruleset' : 'Add Ruleset to Mihomo'}</h3>
-          <p class="text-xs text-zinc-500 mt-0.5">Configuration will be persisted and reloaded instantly</p>
+          <p class="text-xs text-zinc-500 mt-0.5">Changes are saved and applied automatically. Nikki may briefly interrupt connections.</p>
         </div>
         <button id="modal-close" class="text-zinc-500 hover:text-zinc-200 text-lg leading-none">&times;</button>
       </div>
 
       <div class="space-y-4 text-xs">
         <div>
-          <label class="block text-zinc-300 mb-1 font-medium">Ruleset Identifier (Name)</label>
+          <label class="block text-zinc-300 mb-1 font-medium">Ruleset name</label>
           <input id="modal-name" type="text" value="${escapeHtml(initialName)}" placeholder="e.g. youtube, openai, telegram" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-mono focus:border-zinc-500 focus:outline-none">
         </div>
 
@@ -2777,7 +2643,7 @@ function openAddRuleModal(preset = null) {
         </div>
 
         <div>
-          <label class="block text-zinc-300 mb-1 font-medium">Target Proxy Group</label>
+          <label class="block text-zinc-300 mb-1 font-medium">Destination</label>
           <select id="modal-group" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-medium focus:border-zinc-500 focus:outline-none">
             ${groups.map(g => `<option value="${escapeHtml(g)}" ${g === defaultGroup ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
           </select>
@@ -2874,7 +2740,7 @@ function openEditRuleModal(name) {
   if (!state.local) return;
   const groups = state.local.routing_targets || state.local.proxy_groups || ['DIRECT', 'REJECT'];
 
-  let currentGroup = groups[0];
+  let currentGroup = groups.includes('VPN-NON-RU') ? 'VPN-NON-RU' : groups[0];
   (state.local.rules || []).forEach(r => {
     const parts = r.split(',').map(s => s.trim());
     if (parts.length >= 3 && parts[0].toUpperCase() === 'RULE-SET' && parts[1].toLowerCase() === name.toLowerCase()) {
@@ -2903,7 +2769,7 @@ function openEditRuleModal(name) {
 
       <div class="space-y-4 text-xs">
         <div>
-          <label class="block text-zinc-300 mb-1 font-medium">Target Proxy Group</label>
+          <label class="block text-zinc-300 mb-1 font-medium">Destination</label>
           <select id="modal-edit-group" class="h-9 w-full px-3 bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-medium focus:border-zinc-500 focus:outline-none">
             ${groups.map(g => `<option value="${escapeHtml(g)}" ${g === currentGroup ? 'selected' : ''}>${escapeHtml(g)}</option>`).join('')}
           </select>
@@ -3021,7 +2887,7 @@ function confirmDeleteRule(name) {
   modal.innerHTML = `
     <div class="bg-zinc-950 border border-zinc-800 rounded-lg p-6 max-w-sm w-full space-y-4 shadow-2xl relative" onclick="event.stopPropagation()">
       <div>
-        <h3 class="font-semibold text-sm text-zinc-100">Remove Ruleset</h3>
+        <h3 class="font-semibold text-sm text-zinc-100">Unregister ruleset</h3>
         <p class="text-xs text-zinc-400 font-mono mt-1">${escapeHtml(name)}</p>
       </div>
 
@@ -3031,7 +2897,7 @@ function confirmDeleteRule(name) {
 
       <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer bg-zinc-900 p-2.5 rounded-md border border-zinc-800">
         <input id="modal-del-file" type="checkbox" checked class="rounded bg-zinc-950 border-zinc-700">
-        <span>Also delete downloaded <code>.mrs</code> file</span>
+        <span>Also remove the cached file</span>
       </label>
 
       <div class="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
@@ -3270,17 +3136,15 @@ function renderPreviewContent(data, closeModal) {
   };
 }
 
-document.getElementById('btn-custom-rule').addEventListener('click', () => {
-  openAddRuleModal(null);
-});
-
 document.getElementById('btn-reload-mihomo').addEventListener('click', async () => {
   const icon = document.getElementById('reload-icon');
+  const btn=document.getElementById("btn-reload-mihomo");btn.disabled=true;
   icon.classList.add('spin');
   try {
     const data = await API.reloadMihomo();
     if (data.status === 'ok') {
-      showToast('Mihomo hot-reloaded successfully', 'success');
+      showToast(state.local?.mode==='nikki'?'Nikki restarted':'Mihomo reloaded', 'success');
+      await fetchLocal(); render();
     } else {
       showToast(data.error || 'Hot-reload failed', 'error');
     }
@@ -3288,6 +3152,7 @@ document.getElementById('btn-reload-mihomo').addEventListener('click', async () 
     showToast('Failed to reach Mihomo API: ' + err.message, 'error');
   } finally {
     icon.classList.remove('spin');
+    btn.disabled=false;
     await pingMihomoStatus();
   }
 });
@@ -3296,7 +3161,7 @@ document.getElementById('card-mihomo-status')?.addEventListener('click', () => {
   pingMihomoStatus();
 });
 
-document.getElementById('btn-toggle-quic').addEventListener('click', async () => {
+async function toggleGlobalQUIC() {
   const current = state.local && !!state.local.global_quic_blocked;
   const next = !current;
   const btn = document.getElementById('btn-toggle-quic');
@@ -3314,12 +3179,12 @@ document.getElementById('btn-toggle-quic').addEventListener('click', async () =>
   } finally {
     btn.disabled = false;
   }
-});
+  render();
+}
 
 async function init() {
   await fetchLocal();
-  await fetchCatalog(false);
-  setTab('catalog');
+  setTab('routes');
   setInterval(pingMihomoStatus, 15000);
 }
 
