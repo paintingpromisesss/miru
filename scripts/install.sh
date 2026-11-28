@@ -93,11 +93,25 @@ chmod 755 "$STAGE/$NAME"
 [ "$("$STAGE/$NAME" -version)" = "$VERSION" ] || fail "Downloaded binary version mismatch"
 ok "Release checksums and binary version verified"
 section "2 / 4  Configuration"
-# Existing settings take precedence on upgrades.
+# Existing settings take precedence on upgrades. Legacy installs did not
+# record a mode or bind address and may refer to a removed standalone core.
+REQUESTED_MODE="${MIRU_MODE:-}"
+LEGACY_MIGRATION=false
 if [ -f "$CONF" ]; then . "$CONF"; info "Existing settings loaded: $CONF"; fi
 if [ -z "${MIRU_MODE:-}" ]; then
-    if [ -x /etc/init.d/nikki ] && [ -f /etc/nikki/mixin.yaml ] && [ "${MIRU_CONFIG:-/etc/nikki/mixin.yaml}" = /etc/nikki/mixin.yaml ]; then MIRU_MODE=nikki
+    if [ -x /etc/init.d/nikki ] && [ -f /etc/nikki/mixin.yaml ] &&
+        { [ -z "${MIRU_CONFIG:-}" ] || [ "$MIRU_CONFIG" = /etc/nikki/mixin.yaml ] || [ ! -f "$MIRU_CONFIG" ]; }; then
+        MIRU_MODE=nikki
+        if [ -f "$CONF" ] && [ "${MIRU_CONFIG:-}" != /etc/nikki/mixin.yaml ]; then
+            LEGACY_MIGRATION=true
+            warn "Legacy standalone configuration is unavailable; migrating Miru settings to Nikki."
+            unset MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_MIHOMO_SECRET
+            if [ "${MIRU_PORT:-}" = 8080 ]; then MIRU_PORT=8787; fi
+        fi
     else MIRU_MODE=standalone; fi
+fi
+if [ "$LEGACY_MIGRATION" = true ] && [ -z "$REQUESTED_MODE" ] && [ "$YES" = false ]; then
+    if ( : </dev/tty ) 2>/dev/null; then INTERACTIVE=true; fi
 fi
 if [ "$INTERACTIVE" = true ]; then
     info "Detected mode: $MIRU_MODE"
@@ -136,7 +150,7 @@ if [ "$INTERACTIVE" = true ]; then
         LAN=$(uci -q get network.lan.ipaddr 2>/dev/null || true)
         LAN=${LAN%% *}; LAN=${LAN%%/*}
     fi
-    if [ -n "$LAN" ] && [ ! -f "$CONF" ] && [ "$MIRU_BIND" = 127.0.0.1 ]; then MIRU_BIND=$LAN; fi
+    if [ -n "$LAN" ] && { [ ! -f "$CONF" ] || [ "$LEGACY_MIGRATION" = true ]; } && [ "$MIRU_BIND" = 127.0.0.1 ]; then MIRU_BIND=$LAN; fi
     prompt "Listen address (127.0.0.1 for local only)" "$MIRU_BIND"; MIRU_BIND=$ANSWER
     prompt "Mihomo controller URL" "$MIRU_MIHOMO_API"; MIRU_MIHOMO_API=$ANSWER
     auth=password
