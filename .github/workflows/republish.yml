@@ -1,0 +1,57 @@
+name: Republish v1.0.0
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/republish.yml]
+permissions:
+  contents: write
+concurrency:
+  group: republish-v1
+  cancel-in-progress: false
+jobs:
+  republish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Stage and verify release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v=$(cat VERSION)
+          [[ "$v" == v1.0.0 ]]
+          # Only reuse binaries if the code and build inputs have not changed.
+          git diff --exit-code "$v" HEAD -- cmd internal web go.mod go.sum Makefile
+          sh -n scripts/install.sh
+          sh -n scripts/miru.init
+          mkdir -p "$RUNNER_TEMP/miru-release"
+          cd "$RUNNER_TEMP/miru-release"
+          gh release download "$v" --repo "$GITHUB_REPOSITORY" --pattern 'miru-linux-*' --pattern SHA256SUMS
+          for arch in amd64 arm arm64 mips mipsle; do
+            for suffix in '' -upx; do
+              asset="miru-linux-$arch$suffix"
+              awk -v f="$asset" '$2 == f {print}' SHA256SUMS | sha256sum -c -
+            done
+          done
+          cp "$GITHUB_WORKSPACE"/VERSION "$GITHUB_WORKSPACE"/scripts/{install.sh,miru.init,miru.service} .
+          rm SHA256SUMS
+          sha256sum VERSION install.sh miru.init miru.service miru-linux-* > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Publish new release record
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v=$(cat VERSION)
+          git push origin "$GITHUB_SHA:refs/tags/$v" --force-with-lease="refs/tags/$v:$(git rev-parse "refs/tags/$v")"
+          cd "$RUNNER_TEMP/miru-release"
+          # Assets are staged and verified before replacing the old release.
+          gh release delete "$v" --yes --repo "$GITHUB_REPOSITORY"
+          gh release create "$v" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Miru $v" --notes "Lightweight Mihomo routing manager with standalone and Nikki integration, embedded web UI, Tachyon and MetaCubeX catalogs, and an interactive OpenWrt/Linux installer. Standard and UPX builds for five Linux architectures. See the README for installation and configuration." ./*
+          gh release view "$v" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/published-assets"
+          for file in ./*; do grep -Fx "$(basename "$file")" "$RUNNER_TEMP/published-assets"; done
+          gh release edit "$v" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest
+          gh release view "$v" --repo "$GITHUB_REPOSITORY" --json publishedAt,isDraft,tagName,url
