@@ -41,14 +41,29 @@ prompt() {
     ANSWER=${ANSWER:-$2}
 }
 prompt_password() {
-    printf '  Password (input hidden): ' >/dev/tty
-    old_stty=$(stty -g </dev/tty)
-    trap 'stty "$old_stty" </dev/tty; exit 1' HUP INT TERM
-    stty -echo </dev/tty
-    IFS= read -r ANSWER </dev/tty || ANSWER=
-    stty "$old_stty" </dev/tty
-    trap 'exit 1' HUP INT TERM
-    printf '\n' >/dev/tty
+    # BusyBox ash supports silent read on builds that omit the stty applet.
+    if command -v stty >/dev/null 2>&1 && old_stty=$(stty -g </dev/tty 2>/dev/null); then
+        printf '  Password (input hidden): ' >/dev/tty
+        trap 'stty "$old_stty" </dev/tty; exit 1' HUP INT TERM
+        if stty -echo </dev/tty; then
+            IFS= read -r ANSWER </dev/tty || ANSWER=
+            stty "$old_stty" </dev/tty
+        else
+            fail "Cannot disable terminal echo; set MIRU_PASSWORD before running the installer"
+        fi
+        trap 'exit 1' HUP INT TERM
+        printf '\n' >/dev/tty
+    elif ( printf 'probe\n' | (IFS= read -r -s probe) ) 2>/dev/null; then
+        printf '  Password (input hidden): ' >/dev/tty
+        IFS= read -r -s ANSWER </dev/tty || ANSWER=
+        printf '\n' >/dev/tty
+    else
+        warn "Hidden input is unavailable on this device."
+        prompt "Enter password visibly? (yes / no)" no
+        case "$ANSWER" in yes|y) ;; *) fail "Set MIRU_PASSWORD before running the installer, or select no authentication";; esac
+        printf '  Password (visible): ' >/dev/tty
+        IFS= read -r ANSWER </dev/tty || ANSWER=
+    fi
     [ -n "$ANSWER" ] || fail "Password cannot be empty"
 }
 section "Miru installer"
