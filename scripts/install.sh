@@ -30,41 +30,56 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 INTERACTIVE=false
-if [ "$YES" = false ] && { [ "$CONFIGURE" = true ] || [ ! -f "$CONF" ]; }; then
-    if ( : </dev/tty ) 2>/dev/null; then INTERACTIVE=true; fi
-fi
-# Explicit settings from automation should not unexpectedly prompt.
-if [ "$CONFIGURE" = false ] && [ -n "${MIRU_BIND:-}${MIRU_PASSWORD:-}${MIRU_NO_AUTH:-}${MIRU_MODE:-}" ]; then INTERACTIVE=false; fi
+if [ "$YES" = false ] && ( : </dev/tty ) 2>/dev/null; then INTERACTIVE=true; fi
+if [ "$CONFIGURE" = false ] && [ -n "${MIRU_BIND:-}${MIRU_PASSWORD:-}${MIRU_NO_AUTH:-}${MIRU_MODE:-}${MIRU_UPX:-}" ]; then INTERACTIVE=false; fi
 prompt() {
     printf '  %s [%s]: ' "$1" "$2" >/dev/tty
     IFS= read -r ANSWER </dev/tty || fail "Input interrupted"
     ANSWER=${ANSWER:-$2}
 }
+choose() {
+    question=$1; default=$2; shift 2
+    printf '\n  %s\n' "$question" >/dev/tty
+    for choice in "$@"; do printf '    %s\n' "$choice" >/dev/tty; done
+    while :; do
+        prompt "Choice" "$default"
+        for choice in "$@"; do
+            if [ "$ANSWER" = "${choice%%.*}" ]; then return 0; fi
+        done
+        warn "Choose one of the numbers shown."
+    done
+}
+valid_port() {
+    case "$1" in ''|*[!0-9]*|??????*) return 1;; esac
+    [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+valid_bind() {
+    # Accept a literal IPv4/IPv6 address or local hostname; reject URL syntax.
+    case "$1" in ''|*[!a-zA-Z0-9_.:-]*) return 1;; esac
+}
 prompt_password() {
-    # BusyBox ash supports silent read on builds that omit the stty applet.
-    if command -v stty >/dev/null 2>&1 && old_stty=$(stty -g </dev/tty 2>/dev/null); then
-        printf '  Password (input hidden): ' >/dev/tty
-        trap 'stty "$old_stty" </dev/tty; exit 1' HUP INT TERM
-        if stty -echo </dev/tty; then
+    while :; do
+        if command -v stty >/dev/null 2>&1 && old_stty=$(stty -g </dev/tty 2>/dev/null) && stty -echo </dev/tty; then
+            trap 'stty "$old_stty" </dev/tty; exit 1' HUP INT TERM
+            printf '  Password (hidden): ' >/dev/tty
             IFS= read -r ANSWER </dev/tty || ANSWER=
             stty "$old_stty" </dev/tty
+            trap 'exit 1' HUP INT TERM
+            printf '\n' >/dev/tty
+        elif ( printf 'probe\n' | (IFS= read -r -s probe) ) 2>/dev/null; then
+            printf '  Password (hidden): ' >/dev/tty
+            IFS= read -r -s ANSWER </dev/tty || ANSWER=
+            printf '\n' >/dev/tty
         else
-            fail "Cannot disable terminal echo; set MIRU_PASSWORD before running the installer"
+            warn "Hidden input is unavailable."
+            choose "Password entry" 2 "1. Enter visibly" "2. Return to authentication menu"
+            [ "$ANSWER" = 1 ] || return 1
+            printf '  Password (visible): ' >/dev/tty
+            IFS= read -r ANSWER </dev/tty || ANSWER=
         fi
-        trap 'exit 1' HUP INT TERM
-        printf '\n' >/dev/tty
-    elif ( printf 'probe\n' | (IFS= read -r -s probe) ) 2>/dev/null; then
-        printf '  Password (input hidden): ' >/dev/tty
-        IFS= read -r -s ANSWER </dev/tty || ANSWER=
-        printf '\n' >/dev/tty
-    else
-        warn "Hidden input is unavailable on this device."
-        prompt "Enter password visibly? (yes / no)" no
-        case "$ANSWER" in yes|y) ;; *) fail "Set MIRU_PASSWORD before running the installer, or select no authentication";; esac
-        printf '  Password (visible): ' >/dev/tty
-        IFS= read -r ANSWER </dev/tty || ANSWER=
-    fi
-    [ -n "$ANSWER" ] || fail "Password cannot be empty"
+        [ -n "$ANSWER" ] && return 0
+        warn "Password cannot be empty."
+    done
 }
 section "Miru installer"
 
@@ -80,8 +95,6 @@ case "$(uname -m)" in
     x86_64|amd64) ARCH=amd64;; mips) ARCH=mips;; mipsel|mipsle) ARCH=mipsle;;
     *) fail "Unsupported architecture: $(uname -m)";;
 esac
-NAME=miru-linux-$ARCH
-case "${MIRU_UPX:-0}" in 1|true) NAME=$NAME-upx;; esac
 STAGE=$(mktemp -d /tmp/miru-install.XXXXXX)
 trap 'rm -rf "$STAGE"' EXIT
 trap 'exit 1' HUP INT TERM
@@ -98,57 +111,70 @@ if [ "$VERSION" = latest ]; then
 fi
 printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || fail "Invalid release version"
 BASE=https://github.com/$REPO/releases/download/$VERSION
-section "1 / 4  Download and verify"
+section "1 / 4  Setup"
 info "Version: $VERSION | Architecture: $ARCH | Service: $INIT"
-for file in "$NAME" "$SERVICE_ASSET" SHA256SUMS; do download "$file" "$STAGE/$file"; done
-for file in "$NAME" "$SERVICE_ASSET"; do
-    (cd "$STAGE"; awk -v f="$file" '$2 == f {print}' SHA256SUMS | sha256sum -c -) || fail "Checksum mismatch: $file"
-done
-chmod 755 "$STAGE/$NAME"
-[ "$("$STAGE/$NAME" -version)" = "$VERSION" ] || fail "Downloaded binary version mismatch"
-ok "Release checksums and binary version verified"
-section "2 / 4  Configuration"
-# Existing settings take precedence on upgrades. Legacy installs did not
-# record a mode or bind address and may refer to a removed standalone core.
+
+REQUESTED_UPX="${MIRU_UPX:-}"
 REQUESTED_MODE="${MIRU_MODE:-}"
 LEGACY_MIGRATION=false
-if [ -f "$CONF" ]; then . "$CONF"; info "Existing settings loaded: $CONF"; fi
+EXISTING=false
+if [ -f "$CONF" ]; then
+    EXISTING=true
+    . "$CONF"
+    info "Existing settings loaded."
+fi
+if [ -n "$REQUESTED_UPX" ]; then MIRU_UPX=$REQUESTED_UPX; fi
+NIKKI=false
+if [ -x /etc/init.d/nikki ] && [ -f /etc/nikki/mixin.yaml ]; then NIKKI=true; fi
 if [ -z "${MIRU_MODE:-}" ]; then
-    if [ -x /etc/init.d/nikki ] && [ -f /etc/nikki/mixin.yaml ] &&
-        { [ -z "${MIRU_CONFIG:-}" ] || [ "$MIRU_CONFIG" = /etc/nikki/mixin.yaml ] || [ ! -f "$MIRU_CONFIG" ]; }; then
+    if [ "$NIKKI" = true ] && { [ -z "${MIRU_CONFIG:-}" ] || [ "$MIRU_CONFIG" = /etc/nikki/mixin.yaml ] || [ ! -f "$MIRU_CONFIG" ]; }; then
         MIRU_MODE=nikki
-        if [ -f "$CONF" ] && [ "${MIRU_CONFIG:-}" != /etc/nikki/mixin.yaml ]; then
+        if [ "$EXISTING" = true ] && [ "${MIRU_CONFIG:-}" != /etc/nikki/mixin.yaml ]; then
             LEGACY_MIGRATION=true
-            warn "Legacy standalone configuration is unavailable; migrating Miru settings to Nikki."
+            warn "Migrating legacy settings to Nikki."
             unset MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_MIHOMO_SECRET
-            if [ "${MIRU_PORT:-}" = 8080 ]; then MIRU_PORT=8787; fi
+            MIRU_PORT=8787
         fi
     else MIRU_MODE=standalone; fi
 fi
-if [ "$LEGACY_MIGRATION" = true ] && [ -z "$REQUESTED_MODE" ] && [ "$YES" = false ]; then
-    if ( : </dev/tty ) 2>/dev/null; then INTERACTIVE=true; fi
+LAN=
+if [ "$INIT" = procd ]; then
+    LAN=$(uci -q get network.lan.ipaddr 2>/dev/null || true)
+    LAN=${LAN%% *}; LAN=${LAN%%/*}
 fi
+EDIT=$CONFIGURE
 if [ "$INTERACTIVE" = true ]; then
-    info "Detected mode: $MIRU_MODE"
-    prompt "Mode (nikki / standalone)" "$MIRU_MODE"
-    if [ "$ANSWER" != "$MIRU_MODE" ]; then
-        unset MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_MIHOMO_SECRET
-    fi
-    MIRU_MODE=$ANSWER
+    if [ "$EXISTING" = true ] && [ "$LEGACY_MIGRATION" = false ] && [ "$CONFIGURE" = false ]; then
+        info "Current setup: $MIRU_MODE | ${MIRU_BIND:-127.0.0.1}:${MIRU_PORT:-8787}"
+        choose "Installation action" 1 "1. Update (keep settings)" "2. Reconfigure" "0. Cancel"
+        case "$ANSWER" in 1) EDIT=false;; 2) EDIT=true;; 0) exit 0;; esac
+    else EDIT=true; fi
 fi
-case "$MIRU_MODE" in
-    nikki)
-        [ -x /etc/init.d/nikki ] || fail "Nikki is not installed"
-        [ "$(uci -q get nikki.mixin.mixin_file_content || true)" = 1 ] || fail "Enable Nikki mixin file content first"
-        : "${MIRU_CONFIG:=/etc/nikki/mixin.yaml}"
-        : "${MIRU_RULES_DIR:=/etc/nikki/run/ruleset}"
-        : "${MIRU_GITHUB_PROXY:=none}";;
-    standalone)
-        : "${MIRU_CONFIG:=/etc/mihomo/config.yaml}"
-        : "${MIRU_RULES_DIR:=/etc/mihomo/rules}"
-        : "${MIRU_GITHUB_PROXY:=auto}";;
-    *) fail "Invalid MIRU_MODE";;
-esac
+# Retain the installed variant, unless a user explicitly selects another.
+case "${MIRU_UPX:-0}" in 0|false) MIRU_UPX=0;; 1|true) MIRU_UPX=1;; *) fail "Invalid MIRU_UPX";; esac
+if [ "$INTERACTIVE" = true ]; then
+    variant_default=1; [ "$MIRU_UPX" = 0 ] || variant_default=2
+    choose "Binary variant" "$variant_default" "1. Standard (recommended; faster startup)" "2. UPX compressed (less flash storage)" "0. Cancel"
+    case "$ANSWER" in 1) MIRU_UPX=0;; 2) MIRU_UPX=1;; 0) exit 0;; esac
+fi
+NAME=miru-linux-$ARCH
+VARIANT=Standard
+if [ "$MIRU_UPX" = 1 ]; then NAME=$NAME-upx; VARIANT=UPX; fi
+
+mode_defaults() {
+    case "$MIRU_MODE" in
+        nikki)
+            : "${MIRU_CONFIG:=/etc/nikki/mixin.yaml}"
+            : "${MIRU_RULES_DIR:=/etc/nikki/run/ruleset}"
+            : "${MIRU_GITHUB_PROXY:=none}";;
+        standalone)
+            : "${MIRU_CONFIG:=/etc/mihomo/config.yaml}"
+            : "${MIRU_RULES_DIR:=/etc/mihomo/rules}"
+            : "${MIRU_GITHUB_PROXY:=auto}";;
+        *) fail "Invalid MIRU_MODE";;
+    esac
+}
+mode_defaults
 : "${MIRU_PORT:=8787}"
 : "${MIRU_BIND:=127.0.0.1}"
 : "${MIRU_MIHOMO_API:=http://127.0.0.1:9090}"
@@ -156,59 +182,124 @@ esac
 : "${MIRU_GITHUB_TOKEN:=}"
 : "${MIRU_PASSWORD:=}"
 : "${MIRU_NO_AUTH:=false}"
-if [ "$INTERACTIVE" = true ]; then
-    prompt "Editable configuration" "$MIRU_CONFIG"; MIRU_CONFIG=$ANSWER
-    prompt "Rules cache directory" "$MIRU_RULES_DIR"; MIRU_RULES_DIR=$ANSWER
-    prompt "Web UI port" "$MIRU_PORT"; MIRU_PORT=$ANSWER
-    LAN=
-    if [ "$INIT" = procd ]; then
-        LAN=$(uci -q get network.lan.ipaddr 2>/dev/null || true)
-        LAN=${LAN%% *}; LAN=${LAN%%/*}
-    fi
-    if [ -n "$LAN" ] && { [ ! -f "$CONF" ] || [ "$LEGACY_MIGRATION" = true ]; } && [ "$MIRU_BIND" = 127.0.0.1 ]; then MIRU_BIND=$LAN; fi
-    prompt "Listen address (127.0.0.1 for local only)" "$MIRU_BIND"; MIRU_BIND=$ANSWER
-    prompt "Mihomo controller URL" "$MIRU_MIHOMO_API"; MIRU_MIHOMO_API=$ANSWER
-    auth=password
-    case "$MIRU_NO_AUTH" in true|1) auth=none;; esac
-    prompt "Authentication (password / none)" "$auth"
-    case "$ANSWER" in
-        password)
-            MIRU_NO_AUTH=false
-            if [ -n "$MIRU_PASSWORD" ]; then
-                prompt "Keep existing password? (yes / no)" yes
-                case "$ANSWER" in yes|y) ;; no|n) prompt_password; MIRU_PASSWORD=$ANSWER;; *) fail "Invalid choice";; esac
-            else prompt_password; MIRU_PASSWORD=$ANSWER; fi;;
-        none)
-            warn "Unauthenticated users can edit routing and restart the VPN."
-            prompt "Disable authentication on this trusted network? (yes / no)" no
-            case "$ANSWER" in yes|y) MIRU_NO_AUTH=true; MIRU_PASSWORD=;; *) fail "Authentication not disabled";; esac;;
-        *) fail "Choose password or none";;
-    esac
-fi
 case "$MIRU_NO_AUTH" in 1|true) MIRU_NO_AUTH=true;; 0|false) MIRU_NO_AUTH=false;; *) fail "Invalid MIRU_NO_AUTH";; esac
+
+if [ "$INTERACTIVE" = true ] && [ "$EDIT" = true ]; then
+    while :; do
+        mode_default=2; [ "$MIRU_MODE" != nikki ] || mode_default=1
+        choose "Operating mode" "$mode_default" "1. Nikki" "2. Standalone Mihomo" "0. Cancel"
+        case "$ANSWER" in
+            1)
+                if [ "$NIKKI" != true ]; then warn "Nikki is not installed."; continue; fi
+                if [ "$(uci -q get nikki.mixin.mixin_file_content || true)" != 1 ]; then warn "Enable mixin file content in Nikki first."; continue; fi
+                selected=nikki;;
+            2) selected=standalone;;
+            0) exit 0;;
+        esac
+        if [ "$selected" != "$MIRU_MODE" ]; then
+            unset MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_MIHOMO_SECRET
+            MIRU_MIHOMO_SECRET=
+        fi
+        MIRU_MODE=$selected; mode_defaults
+        break
+    done
+    if [ "$MIRU_MODE" = standalone ]; then
+        while :; do
+            prompt "Mihomo configuration file" "$MIRU_CONFIG"
+            if [ -f "$ANSWER" ]; then MIRU_CONFIG=$ANSWER; break; fi
+            warn "File not found: $ANSWER"
+        done
+    fi
+    while :; do
+        prompt "Web UI port" "$MIRU_PORT"
+        if valid_port "$ANSWER"; then MIRU_PORT=$ANSWER; break; fi
+        warn "Enter a port from 1 to 65535."
+    done
+    bind_default=3
+    if [ "$MIRU_BIND" = 127.0.0.1 ] || [ "$MIRU_BIND" = ::1 ]; then bind_default=2; fi
+    if [ -n "$LAN" ]; then
+        if [ "$MIRU_BIND" = "$LAN" ] || [ "$EXISTING" = false ] || [ "$LEGACY_MIGRATION" = true ]; then bind_default=1; fi
+        choose "Web UI access" "$bind_default" "1. Local network ($LAN)" "2. This device only (127.0.0.1)" "3. Custom address"
+    else
+        [ "$bind_default" != 1 ] || bind_default=2
+        choose "Web UI access" "$bind_default" "2. This device only (127.0.0.1)" "3. Custom address"
+    fi
+    case "$ANSWER" in
+        1) MIRU_BIND=$LAN;;
+        2) MIRU_BIND=127.0.0.1;;
+        3) while :; do prompt "Listen address" "$MIRU_BIND"; if valid_bind "$ANSWER"; then MIRU_BIND=$ANSWER; break; fi; warn "Enter an address, not a URL."; done;;
+    esac
+    while :; do
+        auth_default=1
+        [ "$MIRU_NO_AUTH" != true ] || auth_default=2
+        choose "Authentication" "$auth_default" "1. Password (recommended)" "2. No password (trusted network only)" "0. Cancel"
+        case "$ANSWER" in
+            1)
+                if [ -n "$MIRU_PASSWORD" ]; then
+                    choose "Password" 1 "1. Keep existing password" "2. Set a new password"
+                    if [ "$ANSWER" = 2 ]; then prompt_password || continue; MIRU_PASSWORD=$ANSWER; fi
+                else prompt_password || continue; MIRU_PASSWORD=$ANSWER; fi
+                MIRU_NO_AUTH=false; break;;
+            2)
+                warn "Anyone with network access to Miru can modify routing."
+                choose "Allow unauthenticated access?" 2 "1. Allow" "2. Back"
+                if [ "$ANSWER" = 1 ]; then MIRU_NO_AUTH=true; MIRU_PASSWORD=; break; fi;;
+            0) exit 0;;
+        esac
+    done
+    choose "Configuration paths and controller" 1 "1. Use current settings (recommended)" "2. Advanced settings"
+    if [ "$ANSWER" = 2 ]; then
+        while :; do
+            prompt "Editable YAML file" "$MIRU_CONFIG"
+            if [ -f "$ANSWER" ]; then MIRU_CONFIG=$ANSWER; break; fi
+            warn "File not found: $ANSWER"
+        done
+        prompt "Rules cache directory" "$MIRU_RULES_DIR"; MIRU_RULES_DIR=$ANSWER
+        while :; do
+            prompt "Mihomo controller URL" "$MIRU_MIHOMO_API"
+            case "$ANSWER" in http://?*|https://?*) MIRU_MIHOMO_API=$ANSWER; break;; *) warn "Enter an http:// or https:// URL.";; esac
+        done
+        prompt "GitHub proxy (auto / none / URL)" "$MIRU_GITHUB_PROXY"; MIRU_GITHUB_PROXY=$ANSWER
+    fi
+fi
+if [ "$MIRU_MODE" = nikki ]; then
+    [ "$NIKKI" = true ] || fail "Nikki is not installed"
+    [ "$(uci -q get nikki.mixin.mixin_file_content || true)" = 1 ] || fail "Enable Nikki mixin file content first"
+fi
 if [ "$MIRU_BIND" != 127.0.0.1 ] && [ "$MIRU_BIND" != ::1 ] && [ -z "$MIRU_PASSWORD" ] && [ "$MIRU_NO_AUTH" = false ]; then
     fail "Set MIRU_PASSWORD or explicitly MIRU_NO_AUTH=1 for LAN access"
 fi
-case "$MIRU_PORT" in ''|*[!0-9]*) fail "Invalid port";; esac
-[ "$MIRU_PORT" -ge 1 ] && [ "$MIRU_PORT" -le 65535 ] || fail "Invalid port"
-[ -f "$MIRU_CONFIG" ] || fail "Missing config: $MIRU_CONFIG"
-export MIRU_MODE MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_PORT MIRU_BIND MIRU_MIHOMO_API MIRU_MIHOMO_SECRET MIRU_GITHUB_TOKEN MIRU_PASSWORD MIRU_NO_AUTH
-"$STAGE/$NAME" -check-config
-printf '\n  %-19s %s\n' 'Mode' "$MIRU_MODE" 'Config' "$MIRU_CONFIG" 'Rules cache' "$MIRU_RULES_DIR" 'Listen' "$MIRU_BIND:$MIRU_PORT" 'Controller' "$MIRU_MIHOMO_API" 'Init system' "$INIT"
-if [ "$MIRU_NO_AUTH" = true ]; then warn "Authentication disabled"
-elif [ -n "$MIRU_PASSWORD" ]; then info "Authentication: enabled (user miru)"
+valid_port "$MIRU_PORT" || fail "Invalid port"
+valid_bind "$MIRU_BIND" || fail "Invalid listen address"
+[ -f "$MIRU_CONFIG" ] || fail "Missing config: $MIRU_CONFIG (run with --configure)"
+printf '\n  %-19s %s\n' 'Mode' "$MIRU_MODE" 'Binary variant' "$VARIANT" 'Config' "$MIRU_CONFIG" 'Rules cache' "$MIRU_RULES_DIR" 'Listen' "$MIRU_BIND:$MIRU_PORT" 'Controller' "$MIRU_MIHOMO_API"
+if [ "$MIRU_NO_AUTH" = true ]; then info "Authentication: disabled"
+elif [ -n "$MIRU_PASSWORD" ]; then info "Authentication: password (user miru)"
 else info "Authentication: local only"; fi
 if [ "$INTERACTIVE" = true ]; then
-    prompt "Install with these settings? (yes / no)" yes
-    case "$ANSWER" in yes|y) ;; *) fail "Installation cancelled";; esac
+    choose "Proceed with installation?" 1 "1. Install" "0. Cancel"
+    [ "$ANSWER" = 1 ] || exit 0
 fi
+
+section "2 / 4  Download and verify"
+download SHA256SUMS "$STAGE/SHA256SUMS"
+for file in "$NAME" "$SERVICE_ASSET"; do
+    awk -v f="$file" '$2 == f {found=1} END {exit !found}' "$STAGE/SHA256SUMS" || fail "Release asset unavailable: $file"
+    download "$file" "$STAGE/$file"
+    (cd "$STAGE"; awk -v f="$file" '$2 == f {print}' SHA256SUMS | sha256sum -c -) || fail "Checksum mismatch: $file"
+done
+chmod 755 "$STAGE/$NAME"
+[ "$("$STAGE/$NAME" -version)" = "$VERSION" ] || fail "Downloaded binary version mismatch or unsupported executable"
+ok "Release checksums and binary version verified"
+export MIRU_MODE MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_PORT MIRU_BIND MIRU_MIHOMO_API MIRU_MIHOMO_SECRET MIRU_GITHUB_TOKEN MIRU_PASSWORD MIRU_NO_AUTH
+"$STAGE/$NAME" -check-config
 section "3 / 4  Install and start service"
 write_var() {
     printf "%s='" "$1"
     printf '%s' "$2" | sed "s/'/'\\\\''/g"
     printf "'\n"
 }
-for key in MIRU_MODE MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_PORT MIRU_BIND MIRU_MIHOMO_API MIRU_MIHOMO_SECRET MIRU_GITHUB_TOKEN MIRU_PASSWORD MIRU_NO_AUTH; do
+for key in MIRU_MODE MIRU_CONFIG MIRU_RULES_DIR MIRU_GITHUB_PROXY MIRU_PORT MIRU_BIND MIRU_MIHOMO_API MIRU_MIHOMO_SECRET MIRU_GITHUB_TOKEN MIRU_PASSWORD MIRU_NO_AUTH MIRU_UPX; do
     eval 'value=${'"$key"'}'
     write_var "$key" "$value"
 done > "$STAGE/miru.env"
@@ -276,7 +367,7 @@ else systemctl enable miru || rollback; fi
 trap 'exit 1' HUP INT TERM
 ok "Health check passed; autostart enabled"
 section "Miru installed"
-printf '  %-16s %s\n' 'Version' "$VERSION" 'Mode' "$MIRU_MODE" 'Web UI' "http://$HOST:$MIRU_PORT/" 'Settings' "$CONF" 'Binary' "$BIN"
+printf '  %-16s %s\n' 'Version' "$VERSION" 'Mode' "$MIRU_MODE" 'Variant' "$VARIANT" 'Web UI' "http://$HOST:$MIRU_PORT/" 'Settings' "$CONF" 'Binary' "$BIN"
 if [ "$INIT" = procd ]; then
     printf '  %-16s %s\n' 'Restart' '/etc/init.d/miru restart' 'Logs' 'logread -e miru'
 else

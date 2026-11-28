@@ -80,7 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/paintingpromisesss/miru/main/script
 sudo sh /tmp/install.sh
 ```
 
-The first-run wizard detects the mode and prompts for configuration path, cache directory, port, bind address, controller and authentication. On OpenWrt it suggests the LAN address if available. It verifies checksums, validates startup settings, installs the service, checks health and enables autostart. If startup fails, the installer restores the previous installation files. It does not modify the VPN configuration.
+The interactive installer detects the architecture and operating mode, offers Standard or UPX builds, and guides you through network access, port and authentication using numbered menus. Advanced settings expose configuration paths, cache directory, controller and GitHub proxy. On OpenWrt it suggests the LAN address when available. It verifies checksums, validates startup settings, installs the service, checks health and enables autostart. If startup fails, the installer restores the previous installation files. It does not modify the VPN configuration.
 
 For unattended installation:
 
@@ -97,11 +97,11 @@ Use `MIRU_PASSWORD` instead of `MIRU_NO_AUTH=1` to enable HTTP Basic authenticat
 | Standard | `miru-linux-<arch>` | Recommended; no runtime decompression |
 | UPX | `miru-linux-<arch>-upx` | Reduced storage footprint; additional decompression overhead at startup |
 
-Actual sizes vary by architecture and version; see [release assets](https://github.com/paintingpromisesss/miru/releases/latest). Install the compressed variant with `MIRU_UPX=1 sh /tmp/install.sh`.
+Actual sizes vary by architecture and version; see [release assets](https://github.com/paintingpromisesss/miru/releases/latest). Select the variant in the installer, or use `MIRU_UPX=1 sh /tmp/install.sh --yes` for unattended installation. The selected variant is retained on updates.
 
 ### Update or reconfigure
 
-Run the installer again to upgrade, keeping existing settings. Use `sh /tmp/install.sh --configure` to revisit the wizard. For offline installation, copy `VERSION`, `SHA256SUMS`, `install.sh`, the appropriate service file (`miru.init` or `miru.service`) and your architecture's binary from the same release into a directory:
+Run the installer again and choose Update to retain your configuration, or Reconfigure to change it. You can switch between Standard and UPX without changing routing settings. Use `sh /tmp/install.sh --configure` to open the configuration wizard directly. For offline installation, copy `VERSION`, `SHA256SUMS`, `install.sh`, the appropriate service file (`miru.init` or `miru.service`) and your architecture's binary from the same release into a directory:
 
 ```sh
 MIRU_ASSET_DIR=/tmp/miru-release sh /tmp/miru-release/install.sh
