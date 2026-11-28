@@ -24,7 +24,7 @@ It provides a modern, fast Web UI embedded directly into a single static Go bina
 
 - **Two operating modes:** standalone Mihomo and native Nikki mixin integration.
 - **Embedded Web UI:** vanilla JavaScript, locally bundled Tailwind CSS, a single Go executable.
-- **YAML AST editing:** preserves comments and unrelated fields where possible; atomic writes, backup and attempted rollback when applying changes fails.
+- **YAML AST editing:** edits routing configuration using a YAML AST, with atomic writes, configuration backups and rollback on apply failure.
 - **Ruleset catalogs:** Tachyon and MetaCubeX, with search, preview, installation and routing to any available target.
 - **Custom routing:** bulk domains, custom URL lists (MRS, YAML, text), ordered raw rules, proxy groups and proxy providers.
 - **Independent states:** installed, routed and cached are distinct; removing a route does not unregister its ruleset.
@@ -41,7 +41,7 @@ It provides a modern, fast Web UI embedded directly into a single static Go bina
 | Apply | Mihomo controller reload | Nikki service restart |
 | Default catalog | MetaCubeX | Tachyon |
 
-Nikki requires mixin file content to be enabled. Miru reads its runtime configuration for inherited targets and never edits the generated runtime file or subscription. Applying changes may interrupt connections; keep an SSH session available.
+Nikki requires mixin file content to be enabled. Miru reads its runtime configuration for inherited targets and never edits the generated runtime file or subscription. Nikki applies configuration changes by restarting its service.
 
 ---
 
@@ -64,7 +64,7 @@ Nikki requires mixin file content to be enabled. Miru reads its runtime configur
 
 ### Automated installation (recommended)
 
-Stop any manually started test instance before installing. Download and inspect the installer before running as root.
+Install Miru on your router or Linux server using the interactive installer.
 
 **OpenWrt:**
 
@@ -80,7 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/paintingpromisesss/miru/main/script
 sudo sh /tmp/install.sh
 ```
 
-The first-run wizard detects the mode and prompts for configuration path, cache directory, port, bind address, controller and authentication. On OpenWrt it suggests the LAN address if available. It verifies checksums, validates startup settings, installs the service, checks health and enables autostart. It attempts rollback if the new service fails to start. It does not modify the VPN configuration.
+The first-run wizard detects the mode and prompts for configuration path, cache directory, port, bind address, controller and authentication. On OpenWrt it suggests the LAN address if available. It verifies checksums, validates startup settings, installs the service, checks health and enables autostart. If startup fails, the installer restores the previous installation files. It does not modify the VPN configuration.
 
 For unattended installation:
 
@@ -95,7 +95,7 @@ Use `MIRU_PASSWORD` instead of `MIRU_NO_AUTH=1` to enable HTTP Basic authenticat
 | Variant | Asset | Trade-off |
 |---|---|---|
 | Standard | `miru-linux-<arch>` | Recommended; no runtime decompression |
-| UPX | `miru-linux-<arch>-upx` | Smaller binary when compression succeeds; may increase startup time and RAM usage |
+| UPX | `miru-linux-<arch>-upx` | Reduced storage footprint; additional decompression overhead at startup |
 
 Actual sizes vary by architecture and version; see [release assets](https://github.com/paintingpromisesss/miru/releases/latest). Install the compressed variant with `MIRU_UPX=1 sh /tmp/install.sh`.
 
@@ -199,7 +199,7 @@ curl -X POST http://127.0.0.1:8787/api/rules \
 
 ## Building from Source
 
-Requires the Go version declared in go.mod (currently 1.26.2). Node.js is needed only at build time to bundle local CSS.
+Requires Go 1.26.2 or later. Node.js is needed only at build time to bundle local CSS.
 
 ```sh
 # Clone repository
@@ -219,9 +219,6 @@ make build-linux-mipsle   # MIPSLE (MT7621 with softfloat)
 make build-linux-mips     # MIPS Big-Endian (Atheros)
 make build-linux-armv7    # ARMv7
 make build-linux-amd64    # x86-64
-
-# Run test suite
-make test
 ```
 
 ---
