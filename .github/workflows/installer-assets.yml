@@ -1,0 +1,31 @@
+name: Installer assets
+on:
+  push:
+    branches: [main]
+    paths: [scripts/install.sh]
+permissions:
+  contents: write
+concurrency:
+  group: installer-assets
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installer
+        run: sh -n scripts/install.sh
+      - name: Refresh existing release installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v=$(cat VERSION)
+          mkdir -p /tmp/miru-assets
+          gh release download "$v" --pattern SHA256SUMS --dir /tmp/miru-assets --repo "$GITHUB_REPOSITORY"
+          cp scripts/install.sh /tmp/miru-assets/install.sh
+          cd /tmp/miru-assets
+          awk '$2 != "install.sh"' SHA256SUMS > SHA256SUMS.new
+          sha256sum install.sh >> SHA256SUMS.new
+          mv SHA256SUMS.new SHA256SUMS
+          gh release upload "$v" install.sh SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
